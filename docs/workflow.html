@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track — Workflow Guide</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #242833;
+            --border: #2e3340;
+            --text: #e1e4eb;
+            --text-dim: #8b91a0;
+            --accent: #5b9cf6;
+            --accent-dim: #3d6db3;
+            --green: #4caf7c;
+            --orange: #e8983e;
+            --purple: #a78bfa;
+            --red: #ef6b6b;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+            color: var(--accent);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: var(--accent);
+            margin: 2.5rem 0 1rem;
+        }
+
+        .subtitle {
+            color: var(--text-dim);
+            margin-bottom: 2rem;
+            font-size: 1.1rem;
+        }
+
+        .scenario-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 0;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            color: var(--text-dim);
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: var(--text); background: var(--surface2); }
+        .tab.active {
+            color: var(--accent);
+            background: var(--surface2);
+            border-color: var(--accent);
+            border-bottom: 2px solid var(--surface2);
+            margin-bottom: -2px;
+        }
+
+        .tab-content {
+            display: none;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-top: none;
+            border-radius: 0 0 8px 8px;
+            padding: 2rem;
+        }
+
+        .tab-content.active { display: block; }
+
+        .phase {
+            margin-bottom: 2rem;
+            position: relative;
+            padding-left: 2rem;
+        }
+
+        .phase::before {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 28px;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+
+        .phase:last-child::before { display: none; }
+
+        .phase-dot {
+            position: absolute;
+            left: 0;
+            top: 6px;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            border: 2px solid var(--accent);
+            background: var(--bg);
+        }
+
+        .phase-dot.complete { background: var(--green); border-color: var(--green); }
+        .phase-dot.recurring { background: var(--purple); border-color: var(--purple); }
+
+        .phase h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .phase-tag {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .tag-once { background: var(--green); color: #000; }
+        .tag-daily { background: var(--purple); color: #fff; }
+        .tag-weekly { background: var(--orange); color: #000; }
+        .tag-optional { background: var(--surface); color: var(--text-dim); border: 1px solid var(--border); }
+
+        .phase p {
+            color: var(--text-dim);
+            margin-bottom: 0.5rem;
+        }
+
+        .cmd {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            margin: 0.5rem 0;
+            overflow-x: auto;
+        }
+
+        .cmd .comment { color: var(--text-dim); }
+        .cmd .highlight { color: var(--accent); }
+
+        .skill-ref {
+            display: inline-block;
+            background: var(--accent-dim);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-family: monospace;
+            margin: 2px 0;
+        }
+
+        .converge-box {
+            background: var(--surface);
+            border: 2px dashed var(--accent);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .converge-box h3 {
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            justify-content: center;
+        }
+
+        .daily-loop {
+            background: var(--surface);
+            border: 2px solid var(--purple);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+        }
+
+        .daily-loop h4 {
+            color: var(--purple);
+            margin-bottom: 1rem;
+            font-size: 1rem;
+        }
+
+        .loop-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        .loop-step {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .loop-step .step-num {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            line-height: 24px;
+            border-radius: 50%;
+            background: var(--purple);
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .loop-step .step-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .loop-step .step-cmd {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        .note {
+            background: rgba(91, 156, 246, 0.1);
+            border-left: 3px solid var(--accent);
+            padding: 0.75rem 1rem;
+            margin: 1rem 0;
+            border-radius: 0 6px 6px 0;
+            font-size: 0.9rem;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 2rem 0;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 2rem;
+            padding: 1rem;
+            background: var(--surface);
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.one-time { background: var(--green); }
+        .legend-dot.daily { background: var(--purple); }
+        .legend-dot.weekly { background: var(--orange); }
+
+        /* Flow diagram styles */
+        .flow-section {
+            margin: 2rem 0;
+            padding: 2rem;
+            background: var(--surface);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .flow-section h3 {
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            font-size: 1.2rem;
+        }
+
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+        }
+
+        .flow-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .flow-node {
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-align: center;
+            min-width: 140px;
+            position: relative;
+        }
+
+        .flow-node.setup {
+            background: var(--green);
+            color: #000;
+            border: 2px solid var(--green);
+        }
+
+        .flow-node.planning {
+            background: rgba(91, 156, 246, 0.15);
+            color: var(--accent);
+            border: 2px solid var(--accent);
+        }
+
+        .flow-node.work {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--purple);
+            border: 2px solid var(--purple);
+        }
+
+        .flow-node.milestone {
+            background: rgba(232, 152, 62, 0.15);
+            color: var(--orange);
+            border: 2px solid var(--orange);
+            border-radius: 20px;
+        }
+
+        .flow-node.converge {
+            background: rgba(91, 156, 246, 0.1);
+            color: var(--accent);
+            border: 2px dashed var(--accent);
+            border-radius: 20px;
+            padding: 0.4rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .flow-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-dim);
+            font-size: 1.2rem;
+            padding: 0.3rem 0;
+        }
+
+        .flow-arrow.down::after {
+            content: '▼';
+        }
+
+        .flow-arrow.right::after {
+            content: '▶';
+            font-size: 0.8rem;
+        }
+
+        .flow-branch {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+            justify-content: center;
+            flex-wrap: wrap;
+            padding: 0.75rem;
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            margin: 0.25rem 0;
+        }
+
+        .flow-branch-label {
+            width: 100%;
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .flow-sub-node {
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            text-align: center;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+        }
+
+        .flow-loop {
+            border: 2px solid var(--purple);
+            border-radius: 12px;
+            padding: 1rem;
+            position: relative;
+            margin: 0.25rem 0;
+        }
+
+        .flow-loop-label {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--surface);
+            padding: 0 8px;
+            font-size: 0.7rem;
+            color: var(--purple);
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .flow-loop .flow-row {
+            gap: 0.5rem;
+        }
+
+        .flow-loop .flow-node {
+            min-width: 100px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.75rem;
+        }
+
+        .hierarchy-visual {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin: 1.5rem 0;
+            padding: 1rem;
+            background: var(--bg);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .hier-level {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 0;
+        }
+
+        .hier-indent { width: 24px; flex-shrink: 0; }
+
+        .hier-badge {
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .hier-badge.epic { background: var(--orange); color: #000; }
+        .hier-badge.feature { background: var(--accent); color: #000; }
+        .hier-badge.task { background: var(--purple); color: #fff; }
+
+        .hier-text {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+        }
+
+        .hier-connector {
+            margin-left: 12px;
+            padding-left: 12px;
+            border-left: 2px solid var(--border);
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            padding-top: 2px;
+            padding-bottom: 2px;
+        }
+
+        .skill-map {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.4rem 1rem;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+        }
+
+        .skill-map .skill-name {
+            font-family: monospace;
+            color: var(--accent);
+        }
+
+        .skill-map .skill-desc {
+            color: var(--text-dim);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Track Workflow</h1>
+        <p class="subtitle">End-to-end project management with track CLI + web UI + Claude Code skills</p>
+
+        <div class="legend">
+            <div class="legend-item"><div class="legend-dot one-time"></div> One-time setup</div>
+            <div class="legend-item"><div class="legend-dot daily"></div> Every session (daily)</div>
+            <div class="legend-item"><div class="legend-dot weekly"></div> Weekly cadence</div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- FLOW DIAGRAMS SECTION                        -->
+        <!-- ============================================ -->
+        <h2>Flow Diagrams</h2>
+
+        <!-- Task Hierarchy -->
+        <div class="flow-section">
+            <h3>Task Hierarchy (how work is structured)</h3>
+            <div class="hierarchy-visual">
+                <div class="hier-level">
+                    <span class="hier-badge epic">Epic</span>
+                    <span class="hier-text">Release milestone (POC, MVP1, MVP2, Production)</span>
+                </div>
+                <div class="hier-connector">contains</div>
+                <div class="hier-level">
+                    <div class="hier-indent"></div>
+                    <span class="hier-badge feature">Feature</span>
+                    <span class="hier-text">User-facing capability ("Pull list generation", "Return tracking")</span>
+                </div>
+                <div class="hier-connector" style="margin-left: 36px;">decomposed into</div>
+                <div class="hier-level">
+                    <div class="hier-indent"></div>
+                    <div class="hier-indent"></div>
+                    <span class="hier-badge task">Task</span>
+                    <span class="hier-text">Implementable in one session (1-3 hours of work)</span>
+                </div>
+            </div>
+            <div class="note">
+                <strong>Key insight:</strong> Epics and features are defined during initial planning (/onboard-project).
+                Tasks are created later by /decompose when you're ready to implement a feature.
+            </div>
+        </div>
+
+        <!-- Flow: Brand New Project -->
+        <div class="flow-section">
+            <h3>Scenario 1: Brand New Project</h3>
+            <div class="flow-diagram">
+                <div class="flow-row">
+                    <div class="flow-node setup">Install + Serve</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node planning">Guided Kickoff (/onboard-project)</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Agent asks questions, then creates</div>
+                    <div class="flow-sub-node">Project</div>
+                    <div class="flow-sub-node">Requirements</div>
+                    <div class="flow-sub-node">Epics (releases)</div>
+                    <div class="flow-sub-node">Features</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node planning">/decompose first feature</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Creates implementation tasks</div>
+                    <div class="flow-sub-node">Task 1 (S, 0.5h)</div>
+                    <div class="flow-sub-node">Task 2 (M, 1.5h)</div>
+                    <div class="flow-sub-node">Task 3 (M, 1.5h)</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node milestone">/plan-sprint</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Selects tasks for the week</div>
+                    <div class="flow-sub-node">Capacity: 9h</div>
+                    <div class="flow-sub-node">Sequenced by priority</div>
+                    <div class="flow-sub-node">Dependencies respected</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node converge">Setup complete — enter daily loop</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-loop">
+                    <div class="flow-loop-label">Daily Work Loop</div>
+                    <div class="flow-row">
+                        <div class="flow-node work">/session-start</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">Pick task</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">Implement</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">/session-end</div>
+                    </div>
+                </div>
+            </div>
+            <div class="skill-map">
+                <span class="skill-name">/onboard-project</span>
+                <span class="skill-desc">Guided kickoff — agent asks questions → creates project + epics + features</span>
+                <span class="skill-name">/decompose</span>
+                <span class="skill-desc">Feature → sized implementation tasks (when ready to build)</span>
+                <span class="skill-name">/plan-sprint</span>
+                <span class="skill-desc">Select + sequence tasks into a weekly sprint (respects capacity)</span>
+                <span class="skill-name">/estimate</span>
+                <span class="skill-desc">Size unsized tasks for timeline accuracy</span>
+            </div>
+        </div>
+
+        <!-- Flow: Convert Existing -->
+        <div class="flow-section">
+            <h3>Scenario 2: Convert Existing Project</h3>
+            <div class="flow-diagram">
+                <div class="flow-row">
+                    <div class="flow-node setup">Install + Serve</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node planning">Guided Import (/onboard-project)</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Agent detects + imports from</div>
+                    <div class="flow-sub-node">sprint-tasks.md</div>
+                    <div class="flow-sub-node">CLAUDE.md backlog</div>
+                    <div class="flow-sub-node">ADO work items</div>
+                    <div class="flow-sub-node">session notes</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node planning">Map to Hierarchy</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Organizes imported items into</div>
+                    <div class="flow-sub-node">Epics (releases)</div>
+                    <div class="flow-sub-node">Features (capabilities)</div>
+                    <div class="flow-sub-node">Tasks (existing items)</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node milestone">/estimate unsized items</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node milestone">/plan-sprint</div>
+                </div>
+                <div class="flow-branch">
+                    <div class="flow-branch-label">Selects first sprint from organized backlog</div>
+                    <div class="flow-sub-node">Capacity: 9h/week</div>
+                    <div class="flow-sub-node">Priority order</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-row">
+                    <div class="flow-node converge">Conversion complete — enter daily loop</div>
+                </div>
+                <div class="flow-arrow down"></div>
+                <div class="flow-loop">
+                    <div class="flow-loop-label">Daily Work Loop</div>
+                    <div class="flow-row">
+                        <div class="flow-node work">/session-start</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">Pick task</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">Implement</div>
+                        <div class="flow-arrow right"></div>
+                        <div class="flow-node work">/session-end</div>
+                    </div>
+                </div>
+            </div>
+            <div class="skill-map">
+                <span class="skill-name">/onboard-project</span>
+                <span class="skill-desc">Detects existing work, imports + organizes into epics/features</span>
+                <span class="skill-name">/estimate</span>
+                <span class="skill-desc">Bulk-size imported tasks that lack estimates</span>
+                <span class="skill-name">/plan-sprint</span>
+                <span class="skill-desc">Select + sequence first sprint from organized backlog</span>
+            </div>
+        </div>
+
+        <!-- Flow: Active Project -->
+        <div class="flow-section">
+            <h3>Scenario 3: Active Project (Daily Loop)</h3>
+            <div class="flow-diagram">
+                <div class="flow-loop">
+                    <div class="flow-loop-label">Every Session</div>
+                    <div class="flow-diagram" style="gap: 0;">
+                        <div class="flow-row">
+                            <div class="flow-node work">/session-start</div>
+                        </div>
+                        <div class="flow-arrow down"></div>
+                        <div class="flow-row">
+                            <div class="flow-node work">Pick task (track task next)</div>
+                        </div>
+                        <div class="flow-arrow down"></div>
+                        <div class="flow-row">
+                            <div class="flow-node work">Implement + test + commit</div>
+                        </div>
+                        <div class="flow-arrow down"></div>
+                        <div class="flow-row">
+                            <div class="flow-node work">Mark done (track task done)</div>
+                        </div>
+                        <div class="flow-arrow down"></div>
+                        <div class="flow-row">
+                            <div class="flow-node work">/session-end</div>
+                        </div>
+                    </div>
+                </div>
+                <div style="height: 1rem;"></div>
+                <div class="flow-row" style="gap: 1.5rem; flex-wrap: wrap;">
+                    <div class="flow-node milestone" style="min-width: 120px;">/plan-sprint<br><small style="font-size:0.65rem;">weekly</small></div>
+                    <div class="flow-node milestone" style="min-width: 120px;">/weekly-report<br><small style="font-size:0.65rem;">end of week</small></div>
+                    <div class="flow-node milestone" style="min-width: 120px;">/decompose<br><small style="font-size:0.65rem;">new feature ready</small></div>
+                    <div class="flow-node milestone" style="min-width: 120px;">/timeline<br><small style="font-size:0.65rem;">stakeholders</small></div>
+                </div>
+            </div>
+            <div class="skill-map">
+                <span class="skill-name">/session-start</span>
+                <span class="skill-desc">Orient: board state, blockers, suggested next task</span>
+                <span class="skill-name">/session-end</span>
+                <span class="skill-desc">Log time, update notes, write CLAUDE.md next steps</span>
+                <span class="skill-name">/decompose</span>
+                <span class="skill-desc">Break next feature into implementation tasks</span>
+                <span class="skill-name">/plan-sprint</span>
+                <span class="skill-desc">Select + sequence work for the week</span>
+                <span class="skill-name">/weekly-report</span>
+                <span class="skill-desc">Summarize velocity, blockers, plan next week</span>
+                <span class="skill-name">/project-status</span>
+                <span class="skill-desc">Cross-project dashboard for standups</span>
+                <span class="skill-name">/timeline</span>
+                <span class="skill-desc">Forecast completion dates</span>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- DETAILED STEPS (TABBED)                      -->
+        <!-- ============================================ -->
+        <h2>Detailed Steps</h2>
+
+        <div class="scenario-tabs">
+            <div class="tab active" onclick="showTab('new')">1. Brand New Project</div>
+            <div class="tab" onclick="showTab('convert')">2. Convert Existing Project</div>
+            <div class="tab" onclick="showTab('active')">3. Active Project (Daily Loop)</div>
+        </div>
+
+        <!-- SCENARIO 1: Brand New Project -->
+        <div id="tab-new" class="tab-content active">
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Install track <span class="phase-tag tag-once">once</span></h3>
+                <p>Get the binary onto your PATH. No dependencies, no runtime needed.</p>
+                <div class="cmd">
+                    <span class="comment"># Windows (copy to a folder in PATH)</span><br>
+                    copy track\bin\track.exe %USERPROFILE%\bin\track.exe<br><br>
+                    <span class="comment"># Or Mac</span><br>
+                    cp track/bin/track-darwin-arm64 /usr/local/bin/track
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Start the server <span class="phase-tag tag-once">once</span></h3>
+                <p>Launches in background, auto-creates database at ~/.track/track.db</p>
+                <div class="cmd">
+                    track serve<br>
+                    <span class="comment"># → Track: http://localhost:3012 (PID 12345)</span>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Guided kickoff <span class="phase-tag tag-once">once</span></h3>
+                <p>The onboard-project skill guides you through a structured project setup. It gathers requirements, defines your release milestones (epics), and identifies features under each.</p>
+                <div class="cmd">
+                    <span class="comment"># Skill walks through the full kickoff:</span><br>
+                    /onboard-project
+                </div>
+                <p>What the kickoff covers:</p>
+                <div class="cmd">
+                    <span class="comment"># 1. Create the project</span><br>
+                    track project create <span class="highlight">PROJ</span> "My Project"<br><br>
+                    <span class="comment"># 2. Gather requirements (through conversation)</span><br>
+                    <span class="comment">#    - What problem are you solving?</span><br>
+                    <span class="comment">#    - Who are the stakeholders?</span><br>
+                    <span class="comment">#    - What data sources exist?</span><br>
+                    <span class="comment">#    - What are the constraints/deadlines?</span><br><br>
+                    <span class="comment"># 3. Define epics (release milestones)</span><br>
+                    track task create --project PROJ --title "POC - Core pipeline" --type epic --priority urgent<br>
+                    track task create --project PROJ --title "MVP1 - Dashboard + alerting" --type epic --priority high<br>
+                    track task create --project PROJ --title "MVP2 - Self-service" --type epic --priority medium<br><br>
+                    <span class="comment"># 4. Identify features under each epic</span><br>
+                    track task create --project PROJ --title "Data ingestion pipeline" --type feature --parent PROJ-1<br>
+                    track task create --project PROJ --title "Quality scoring model" --type feature --parent PROJ-1<br>
+                    track task create --project PROJ --title "Real-time dashboard" --type feature --parent PROJ-2<br>
+                    track task create --project PROJ --title "Alert rules engine" --type feature --parent PROJ-2
+                </div>
+                <div class="note">
+                    <strong>At this point you have:</strong> Project created, requirements documented, epics defined as release milestones, features identified under each epic. No implementation tasks yet — those come from /decompose when you're ready to build a feature.
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Set up ADO sync (optional) <span class="phase-tag tag-optional">optional</span></h3>
+                <p>Pull work items from Azure DevOps. Requires a PAT with "Work Items: Read" scope.</p>
+                <div class="cmd">
+                    <span class="comment"># Set PAT in environment</span><br>
+                    $env:TRACK_ADO_PAT = "your-pat-here"<br><br>
+                    <span class="comment"># Create config template</span><br>
+                    track ado config<br><br>
+                    <span class="comment"># Edit ~/.track/ado.json with your org/team/email</span><br>
+                    <span class="comment"># Then pull:</span><br>
+                    track ado pull
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Decompose first feature <span class="phase-tag tag-once">once</span></h3>
+                <p>When ready to start building, decompose your first feature into implementation tasks.</p>
+                <div class="cmd">
+                    <span class="comment"># Decompose the highest-priority feature:</span><br>
+                    /decompose PROJ-4<br><br>
+                    <span class="comment"># Creates sized, sequenced tasks like:</span><br>
+                    <span class="comment"># PROJ-8: Set up ingestion config (S, 0.5h)</span><br>
+                    <span class="comment"># PROJ-9: Implement source connector (M, 1.5h)</span><br>
+                    <span class="comment"># PROJ-10: Add validation rules (M, 1.5h)</span><br>
+                    <span class="comment"># PROJ-11: Write integration tests (S, 1h)</span>
+                </div>
+            </div>
+
+            <div class="converge-box">
+                <h3>Setup complete — enter daily loop</h3>
+                <p>From here, workflow matches Scenario 3 (Active Project)</p>
+            </div>
+        </div>
+
+        <!-- SCENARIO 2: Convert Existing Project -->
+        <div id="tab-convert" class="tab-content">
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Install track <span class="phase-tag tag-once">once</span></h3>
+                <p>Same as Scenario 1 — get the binary, start the server.</p>
+                <div class="cmd">
+                    track serve
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Run onboard-project <span class="phase-tag tag-once">once</span></h3>
+                <p>Imports existing backlog and organizes it into the epic/feature/task hierarchy.</p>
+                <div class="cmd">
+                    <span class="comment"># Skill does all of this automatically:</span><br>
+                    /onboard-project
+                </div>
+                <p>What it does:</p>
+                <div class="cmd">
+                    <span class="comment"># 1. Creates project</span><br>
+                    track project create PROJ "My Project"<br><br>
+                    <span class="comment"># 2. Reads existing sources:</span><br>
+                    <span class="comment">#    - docs/sprint-tasks.md</span><br>
+                    <span class="comment">#    - CLAUDE.md backlog section</span><br>
+                    <span class="comment">#    - docs/session-notes/ (recent context)</span><br><br>
+                    <span class="comment"># 3. Maps existing items to hierarchy:</span><br>
+                    <span class="comment">#    - Groups related items → creates epics</span><br>
+                    <span class="comment">#    - Identifies capabilities → creates features</span><br>
+                    <span class="comment">#    - Preserves existing tasks + statuses</span><br>
+                    track task create --project PROJ --title "Phase 1 - Current sprint" --type epic<br>
+                    track task create --project PROJ --title "Dashboard improvements" --type feature --parent PROJ-1<br>
+                    track task create --project PROJ --title "Fix chart rendering" --type task --parent PROJ-2<br>
+                    track task move PROJ-3 --status in_progress<br><br>
+                    <span class="comment"># 4. Adds ## Taskboard section to CLAUDE.md</span>
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Estimate unsized tasks <span class="phase-tag tag-once">once</span></h3>
+                <p>Imported tasks likely lack size estimates. Bulk-estimate the backlog.</p>
+                <div class="cmd">
+                    /estimate --project PROJ
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot complete"></div>
+                <h3>Set up ADO sync (if applicable) <span class="phase-tag tag-optional">optional</span></h3>
+                <p>Same as Scenario 1. Links existing ADO work items to track tasks.</p>
+                <div class="cmd">
+                    track ado config<br>
+                    <span class="comment"># edit ~/.track/ado.json</span><br>
+                    track ado pull
+                </div>
+            </div>
+
+            <div class="converge-box">
+                <h3>Conversion complete — enter daily loop</h3>
+                <p>From here, workflow matches Scenario 3 (Active Project)</p>
+            </div>
+        </div>
+
+        <!-- SCENARIO 3: Active Project (Daily Loop) -->
+        <div id="tab-active" class="tab-content">
+
+            <div class="daily-loop">
+                <h4>Daily Session Loop</h4>
+                <div class="loop-steps">
+                    <div class="loop-step">
+                        <div class="step-num">1</div>
+                        <div class="step-title">Start Session</div>
+                        <div class="step-cmd">/session-start</div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="step-num">2</div>
+                        <div class="step-title">Pick Task</div>
+                        <div class="step-cmd">track task next</div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="step-num">3</div>
+                        <div class="step-title">Do Work</div>
+                        <div class="step-cmd">code, test, commit</div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="step-num">4</div>
+                        <div class="step-title">Complete</div>
+                        <div class="step-cmd">track task done ID</div>
+                    </div>
+                    <div class="loop-step">
+                        <div class="step-num">5</div>
+                        <div class="step-title">End Session</div>
+                        <div class="step-cmd">/session-end</div>
+                    </div>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="phase">
+                <div class="phase-dot recurring"></div>
+                <h3>Session start <span class="phase-tag tag-daily">every session</span></h3>
+                <p>Orient: see board state, in-progress tasks, blockers, suggested next steps.</p>
+                <div class="cmd">
+                    <span class="comment"># Skill reads CLAUDE.md + queries track automatically</span><br>
+                    /session-start
+                </div>
+                <p>Or manually:</p>
+                <div class="cmd">
+                    track task list --project PROJ<br>
+                    track session start --project PROJ --branch $(git branch --show-current)
+                </div>
+                <div class="note">Session start shows: in-progress tasks, ready tasks by priority, blockers, active sprint progress, uncommitted git changes.</div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot recurring"></div>
+                <h3>Pick up a task <span class="phase-tag tag-daily">every session</span></h3>
+                <p>Move the next task to in_progress. If the next feature hasn't been decomposed yet, run /decompose first.</p>
+                <div class="cmd">
+                    <span class="comment"># Auto-pick highest priority ready task:</span><br>
+                    track task next<br><br>
+                    <span class="comment"># Or manually:</span><br>
+                    track task move PROJ-5 --status in_progress<br><br>
+                    <span class="comment"># If no ready tasks — decompose next feature:</span><br>
+                    /decompose PROJ-12
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot recurring"></div>
+                <h3>Do the work <span class="phase-tag tag-daily">every session</span></h3>
+                <p>Write code, run tests, iterate. Track stays out of your way.</p>
+                <div class="cmd">
+                    <span class="comment"># If new work discovered mid-session:</span><br>
+                    track task create --project PROJ --title "Found edge case in X" --priority high --source discovered<br><br>
+                    <span class="comment"># If blocked:</span><br>
+                    track blocker create --title "Waiting on API access" --project PROJ
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot recurring"></div>
+                <h3>Complete tasks <span class="phase-tag tag-daily">every session</span></h3>
+                <p>Mark done, log actual time.</p>
+                <div class="cmd">
+                    track task done PROJ-5 --actual-hours 1.5<br><br>
+                    <span class="comment"># Or log time separately:</span><br>
+                    track session log PROJ-5 --hours 1.5 --note "Implemented retry logic"
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot recurring"></div>
+                <h3>End session <span class="phase-tag tag-daily">every session</span></h3>
+                <p>Wraps up: updates task states, logs time, writes session notes, updates CLAUDE.md.</p>
+                <div class="cmd">
+                    <span class="comment"># Skill does all of this:</span><br>
+                    /session-end
+                </div>
+                <p>Or manually:</p>
+                <div class="cmd">
+                    track session end --summary "Completed retry logic for pipeline ingestion"
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="phase">
+                <div class="phase-dot" style="background: var(--orange); border-color: var(--orange);"></div>
+                <h3>Plan sprint <span class="phase-tag tag-weekly">weekly</span></h3>
+                <p>At start of week: select work from decomposed features, sequence tasks, set capacity targets.</p>
+                <div class="cmd">
+                    /plan-sprint --project PROJ
+                </div>
+                <p>Creates a sprint in track with selected tasks and sequencing.</p>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot" style="background: var(--orange); border-color: var(--orange);"></div>
+                <h3>Weekly report <span class="phase-tag tag-weekly">weekly</span></h3>
+                <p>End of week: summarize progress, velocity, blockers, next week plan.</p>
+                <div class="cmd">
+                    /weekly-report
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot" style="background: var(--orange); border-color: var(--orange);"></div>
+                <h3>Project status <span class="phase-tag tag-weekly">as needed</span></h3>
+                <p>Cross-project dashboard for standups or orientation.</p>
+                <div class="cmd">
+                    /project-status
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <div class="phase">
+                <div class="phase-dot"></div>
+                <h3>Decompose next feature <span class="phase-tag tag-optional">as needed</span></h3>
+                <p>When current tasks are done and you're ready to start the next feature, decompose it into tasks.</p>
+                <div class="cmd">
+                    <span class="comment"># Decompose a feature into implementation tasks:</span><br>
+                    /decompose PROJ-20<br><br>
+                    <span class="comment"># Estimate if needed:</span><br>
+                    /estimate --project PROJ
+                </div>
+                <div class="note">
+                    <strong>Decompose on demand:</strong> Don't decompose all features upfront. Decompose the next feature when you're ready to work on it — requirements may have changed by then.
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot"></div>
+                <h3>ADO sync <span class="phase-tag tag-optional">as needed</span></h3>
+                <p>Pull latest work items from Azure DevOps when assignments change.</p>
+                <div class="cmd">
+                    track ado pull<br>
+                    track ado status
+                </div>
+            </div>
+
+            <div class="phase">
+                <div class="phase-dot"></div>
+                <h3>Timeline projection <span class="phase-tag tag-optional">as needed</span></h3>
+                <p>Forecast completion dates for stakeholder communication.</p>
+                <div class="cmd">
+                    /timeline --project PROJ
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(id) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + id).classList.add('active');
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

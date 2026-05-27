@@ -1,0 +1,857 @@
+package api
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/RunOnYourOwn/track/internal/db"
+	"github.com/RunOnYourOwn/track/internal/models"
+)
+
+// RegisterRoutes wires all /api/* endpoints onto mux.
+// It wraps every handler with CORS middleware so the web UI
+// can call the server from any origin during local development.
+func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
+	h := &handler{conn: conn}
+
+	// Projects
+	mux.HandleFunc("GET /api/projects", cors(h.listProjects))
+	mux.HandleFunc("POST /api/projects", cors(h.createProject))
+	mux.HandleFunc("GET /api/projects/{prefix}", cors(h.getProject))
+	mux.HandleFunc("PATCH /api/projects/{prefix}", cors(h.updateProject))
+	mux.HandleFunc("GET /api/projects/{prefix}/tasks", cors(h.listTasks))
+	mux.HandleFunc("POST /api/projects/{prefix}/tasks", cors(h.createTask))
+	mux.HandleFunc("GET /api/projects/{prefix}/sessions", cors(h.listSessions))
+	mux.HandleFunc("GET /api/projects/{prefix}/decisions", cors(h.listDecisions))
+	mux.HandleFunc("GET /api/projects/{prefix}/learnings", cors(h.listLearnings))
+	mux.HandleFunc("GET /api/projects/{prefix}/blockers", cors(h.listBlockers))
+
+	// Tasks
+	mux.HandleFunc("GET /api/tasks/{id}", cors(h.getTask))
+	mux.HandleFunc("PATCH /api/tasks/{id}", cors(h.updateTask))
+	mux.HandleFunc("GET /api/tasks/{id}/deps", cors(h.getDeps))
+	mux.HandleFunc("POST /api/tasks/{id}/deps", cors(h.createDep))
+	mux.HandleFunc("DELETE /api/tasks/{id}/deps/{targetId}", cors(h.deleteDep))
+
+	// Sprints
+	mux.HandleFunc("GET /api/projects/{prefix}/sprints", cors(h.listSprints))
+	mux.HandleFunc("POST /api/projects/{prefix}/sprints", cors(h.createSprint))
+	mux.HandleFunc("PATCH /api/sprints/{id}", cors(h.updateSprint))
+	mux.HandleFunc("POST /api/sprints/{id}/tasks/{taskId}", cors(h.addSprintTask))
+	mux.HandleFunc("DELETE /api/sprints/{id}/tasks/{taskId}", cors(h.removeSprintTask))
+	mux.HandleFunc("GET /api/sprints/{id}/tasks", cors(h.listSprintTasks))
+
+	// Sessions
+	mux.HandleFunc("GET /api/sessions/{id}/stats", cors(h.getSessionStats))
+
+	// Dashboard
+	mux.HandleFunc("GET /api/dashboard", cors(h.dashboard))
+
+	// Handle OPTIONS preflight for all /api/ paths.
+	mux.HandleFunc("OPTIONS /api/", func(w http.ResponseWriter, r *http.Request) {
+		addCORSHeaders(w)
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
+// cors is a middleware that adds CORS headers to every response and
+// short-circuits OPTIONS preflight requests.
+func cors(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		addCORSHeaders(w)
+		addSecurityHeaders(w)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func addCORSHeaders(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+}
+
+func addSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com")
+}
+
+// handler holds the shared DB connection for all route handlers.
+type handler struct {
+	conn *sql.DB
+}
+
+// --- helpers ---
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// splitCSV splits a comma-separated query parameter value, dropping blanks.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := parts[:0]
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// coalesceProjects returns an empty slice instead of nil so JSON encodes as [].
+func coalesceProjects(s []models.Project) []models.Project {
+	if s == nil {
+		return []models.Project{}
+	}
+	return s
+}
+
+func coalesceTasks(s []models.Task) []models.Task {
+	if s == nil {
+		return []models.Task{}
+	}
+	return s
+}
+
+func coalesceSessions(s []models.Session) []models.Session {
+	if s == nil {
+		return []models.Session{}
+	}
+	return s
+}
+
+func coalesceDecisions(s []models.Decision) []models.Decision {
+	if s == nil {
+		return []models.Decision{}
+	}
+	return s
+}
+
+func coalesceLearnings(s []models.Learning) []models.Learning {
+	if s == nil {
+		return []models.Learning{}
+	}
+	return s
+}
+
+func coalesceBlockers(s []models.Blocker) []models.Blocker {
+	if s == nil {
+		return []models.Blocker{}
+	}
+	return s
+}
+
+func coalesceDeps(s []models.Dependency) []models.Dependency {
+	if s == nil {
+		return []models.Dependency{}
+	}
+	return s
+}
+
+// --- project handlers ---
+
+func (h *handler) listProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := db.ListProjects(h.conn)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceProjects(projects))
+}
+
+func (h *handler) getProject(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, p)
+}
+
+type updateProjectRequest struct {
+	WIPLimit *int   `json:"wip_limit"`
+	Phase    string `json:"phase"`
+	Name     string `json:"name"`
+}
+
+func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req updateProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.WIPLimit != nil {
+		if err := db.UpdateProjectField(h.conn, p.ID, "wip_limit", fmt.Sprintf("%d", *req.WIPLimit)); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.Phase != "" {
+		if err := db.UpdateProjectField(h.conn, p.ID, "phase", req.Phase); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if req.Name != "" {
+		if err := db.UpdateProjectField(h.conn, p.ID, "name", req.Name); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	updated, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+type createProjectRequest struct {
+	Prefix     string `json:"prefix"`
+	Name       string `json:"name"`
+	Phase      string `json:"phase"`
+	PhaseType  string `json:"phase_type"`
+	ExternalID string `json:"external_id"`
+	Metadata   string `json:"metadata"`
+	WIPLimit   int    `json:"wip_limit"`
+}
+
+func (h *handler) createProject(w http.ResponseWriter, r *http.Request) {
+	var req createProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Prefix == "" || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "prefix and name are required")
+		return
+	}
+
+	p, err := db.CreateProject(h.conn, req.Prefix, req.Name, req.Phase, req.PhaseType, req.ExternalID, req.Metadata, req.WIPLimit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, p)
+}
+
+// --- task handlers ---
+
+func (h *handler) listTasks(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	opts := db.ListTaskOpts{
+		ProjectID: p.ID,
+		Status:    splitCSV(r.URL.Query().Get("status")),
+		Priority:  splitCSV(r.URL.Query().Get("priority")),
+		ParentID:  r.URL.Query().Get("parent_id"),
+	}
+
+	tasks, err := db.ListTasks(h.conn, opts)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Enrich with blocker status (real impediments from blockers table)
+	type enrichedTask struct {
+		models.Task
+		Blocked bool `json:"blocked"`
+	}
+
+	openBlockers, _ := db.ListBlockers(h.conn, p.ID, true)
+	blockedTaskIDs := make(map[string]bool)
+	for _, b := range openBlockers {
+		if b.TaskID != nil && *b.TaskID != "" {
+			blockedTaskIDs[*b.TaskID] = true
+		}
+	}
+
+	result := make([]enrichedTask, 0, len(tasks))
+	for _, t := range tasks {
+		et := enrichedTask{Task: t, Blocked: blockedTaskIDs[t.ID]}
+		result = append(result, et)
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+type createTaskRequest struct {
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	Priority      string  `json:"priority"`
+	EstimateSize  string  `json:"estimate_size"`
+	EstimateHours float64 `json:"estimate_hours"`
+	ParentID      string  `json:"parent_id"`
+	SourceType    string  `json:"source_type"`
+	AgentContext  string  `json:"agent_context"`
+	Tags          string  `json:"tags"`
+	DueDate       string  `json:"due_date"`
+}
+
+func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req createTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Title == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	task, err := db.CreateTask(h.conn, db.CreateTaskOpts{
+		ProjectID:     p.ID,
+		Title:         req.Title,
+		Description:   req.Description,
+		Priority:      req.Priority,
+		EstimateSize:  req.EstimateSize,
+		EstimateHours: req.EstimateHours,
+		ParentID:      req.ParentID,
+		SourceType:    req.SourceType,
+		AgentContext:  req.AgentContext,
+		Tags:          req.Tags,
+		DueDate:       req.DueDate,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, task)
+}
+
+func (h *handler) getTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	task, err := db.GetTask(h.conn, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, task)
+}
+
+type updateTaskRequest struct {
+	Status      string  `json:"status"`
+	ActualHours float64 `json:"actual_hours"`
+	ParentID    *string `json:"parent_id"`
+	Title       string  `json:"title"`
+	Priority    string  `json:"priority"`
+	DueDate     string  `json:"due_date"`
+}
+
+func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	if _, err := db.GetTask(h.conn, id); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req updateTaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.Status != "" {
+		if req.Status == "done" {
+			if err := db.CompleteTask(h.conn, id, req.ActualHours); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		} else {
+			if err := db.MoveTask(h.conn, id, req.Status); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
+
+	if req.ParentID != nil {
+		if err := db.SetParentID(h.conn, id, *req.ParentID); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	if req.Title != "" {
+		if err := db.UpdateTaskField(h.conn, id, "title", req.Title); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	if req.Priority != "" {
+		if err := db.UpdateTaskField(h.conn, id, "priority", req.Priority); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	if req.DueDate != "" {
+		if err := db.UpdateTaskField(h.conn, id, "due_date", req.DueDate); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
+	task, err := db.GetTask(h.conn, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, task)
+}
+
+// --- dependency handlers ---
+
+func (h *handler) getDeps(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	deps, err := db.GetBlockers(h.conn, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceDeps(deps))
+}
+
+type createDepRequest struct {
+	ToTaskID string `json:"to_task_id"`
+	DepType  string `json:"dep_type"`
+	Reason   string `json:"reason"`
+}
+
+func (h *handler) createDep(w http.ResponseWriter, r *http.Request) {
+	fromID := r.PathValue("id")
+
+	var req createDepRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.ToTaskID == "" {
+		writeError(w, http.StatusBadRequest, "to_task_id is required")
+		return
+	}
+
+	if err := db.CreateDependency(h.conn, fromID, req.ToTaskID, req.DepType, req.Reason); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, models.Dependency{
+		FromTaskID: fromID,
+		ToTaskID:   req.ToTaskID,
+		DepType:    req.DepType,
+		Reason:     req.Reason,
+	})
+}
+
+func (h *handler) deleteDep(w http.ResponseWriter, r *http.Request) {
+	fromID := r.PathValue("id")
+	toID := r.PathValue("targetId")
+
+	if err := db.DeleteDependency(h.conn, fromID, toID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- session / knowledge / blocker handlers ---
+
+type enrichedSession struct {
+	models.Session
+	Stats *models.SessionSummary `json:"stats,omitempty"`
+}
+
+func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	limit := 20
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	sessions, err := db.ListSessions(h.conn, p.ID, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if sessions == nil {
+		sessions = []models.Session{}
+	}
+
+	ids := make([]string, len(sessions))
+	for i, s := range sessions {
+		ids[i] = s.ID
+	}
+
+	batch, _ := db.GetSessionStatsBatch(h.conn, ids)
+
+	enriched := make([]enrichedSession, len(sessions))
+	for i, s := range sessions {
+		enriched[i] = enrichedSession{Session: s}
+		if summary, ok := batch[s.ID]; ok {
+			enriched[i].Stats = &summary
+		}
+	}
+
+	writeJSON(w, http.StatusOK, enriched)
+}
+
+func (h *handler) getSessionStats(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stats, err := db.GetSessionStats(h.conn, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if stats == nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *handler) listDecisions(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	statuses := splitCSV(r.URL.Query().Get("status"))
+	expiring := r.URL.Query().Get("expiring") == "true"
+
+	decisions, err := db.ListDecisions(h.conn, p.ID, statuses, expiring)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceDecisions(decisions))
+}
+
+func (h *handler) listLearnings(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	category := r.URL.Query().Get("category")
+	q := r.URL.Query().Get("q")
+
+	var learnings []models.Learning
+	var fetchErr error
+	if q != "" {
+		learnings, fetchErr = db.SearchLearnings(h.conn, q)
+	} else {
+		learnings, fetchErr = db.ListLearnings(h.conn, p.ID, category)
+	}
+	if fetchErr != nil {
+		writeError(w, http.StatusInternalServerError, fetchErr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceLearnings(learnings))
+}
+
+func (h *handler) listBlockers(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	openOnly := r.URL.Query().Get("open") == "true"
+
+	blockers, err := db.ListBlockers(h.conn, p.ID, openOnly)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceBlockers(blockers))
+}
+
+// --- dashboard ---
+
+type taskCounts struct {
+	Total      int `json:"total"`
+	Done       int `json:"done"`
+	InProgress int `json:"in_progress"`
+	Todo       int `json:"todo"`
+	Waiting    int `json:"waiting"`
+	Blocked    int `json:"blocked"`
+}
+
+type dashboardProject struct {
+	Prefix string     `json:"prefix"`
+	Name   string     `json:"name"`
+	Phase  string     `json:"phase"`
+	Counts taskCounts `json:"counts"`
+}
+
+type dashboardResponse struct {
+	Projects []dashboardProject `json:"projects"`
+}
+
+func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
+	projects, err := db.ListProjects(h.conn)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	result := dashboardResponse{Projects: make([]dashboardProject, 0, len(projects))}
+
+	for _, p := range projects {
+		tasks, err := db.ListTasks(h.conn, db.ListTaskOpts{ProjectID: p.ID})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		openBlockers, err := db.ListBlockers(h.conn, p.ID, true)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		var counts taskCounts
+		for _, t := range tasks {
+			counts.Total++
+			switch {
+			case t.Status == "done":
+				counts.Done++
+			case t.Status == "in_progress":
+				counts.InProgress++
+			case strings.HasPrefix(t.Status, "waiting_"):
+				counts.Waiting++
+			default:
+				counts.Todo++
+			}
+		}
+		counts.Blocked = len(openBlockers)
+
+		result.Projects = append(result.Projects, dashboardProject{
+			Prefix: p.Prefix,
+			Name:   p.Name,
+			Phase:  p.Phase,
+			Counts: counts,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// --- sprint handlers ---
+
+func coalesceSprints(s []models.Sprint) []models.Sprint {
+	if s == nil {
+		return []models.Sprint{}
+	}
+	return s
+}
+
+func (h *handler) listSprints(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sprints, err := db.ListSprints(h.conn, p.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceSprints(sprints))
+}
+
+type createSprintRequest struct {
+	Name      string `json:"name"`
+	Goal      string `json:"goal"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
+
+func (h *handler) createSprint(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var req createSprintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	sprint, err := db.CreateSprint(h.conn, db.CreateSprintOpts{
+		ProjectID: p.ID,
+		Name:      req.Name,
+		Goal:      req.Goal,
+		StartDate: req.StartDate,
+		EndDate:   req.EndDate,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, sprint)
+}
+
+type updateSprintRequest struct {
+	Status string `json:"status"`
+}
+
+func (h *handler) updateSprint(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req updateSprintRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Status == "" {
+		writeError(w, http.StatusBadRequest, "status is required")
+		return
+	}
+	if err := db.UpdateSprintStatus(h.conn, id, req.Status); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sprint, _ := db.GetSprint(h.conn, id)
+	writeJSON(w, http.StatusOK, sprint)
+}
+
+func (h *handler) addSprintTask(w http.ResponseWriter, r *http.Request) {
+	sprintID := r.PathValue("id")
+	taskID := r.PathValue("taskId")
+	if err := db.AddTaskToSprint(h.conn, sprintID, taskID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+}
+
+func (h *handler) removeSprintTask(w http.ResponseWriter, r *http.Request) {
+	sprintID := r.PathValue("id")
+	taskID := r.PathValue("taskId")
+	if err := db.RemoveTaskFromSprint(h.conn, sprintID, taskID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+}
+
+func (h *handler) listSprintTasks(w http.ResponseWriter, r *http.Request) {
+	sprintID := r.PathValue("id")
+	tasks, err := db.ListSprintTasks(h.conn, sprintID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, coalesceTasks(tasks))
+}

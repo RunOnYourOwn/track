@@ -1,0 +1,6 @@
+track
+cover.out
+*.db
+.DS_Store
+docs/*
+!docs/workflow.html

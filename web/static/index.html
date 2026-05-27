@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <nav id="nav">
+    <a href="#/" class="logo">Track</a>
+    <div class="nav-links" id="nav-links">
+      <a href="#/">Dashboard</a>
+      <a href="#/sessions">Sessions</a>
+      <a href="#/knowledge">Knowledge</a>
+      <a href="#/insights">Insights</a>
+    </div>
+  </nav>
+  <main id="app"></main>
+
+  <!-- Vendor -->
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
+  <!-- App core (globals: api, render, fmtDate, escHtml, router) -->
+  <script src="/static/app.js"></script>
+  <!-- View modules -->
+  <script src="/static/kanban.js"></script>
+  <script src="/static/timeline.js"></script>
+  <script src="/static/graph.js"></script>
+  <script src="/static/insights.js"></script>
+  <script src="/static/tree.js"></script>
+  <script src="/static/sessions.js"></script>
+  <script src="/static/knowledge.js"></script>
+  <!-- Boot after all modules loaded -->
+  <script>router.start();</script>
+</body>
+</html>
