@@ -9,6 +9,16 @@ import (
 	"github.com/RunOnYourOwn/track/internal/models"
 )
 
+// ValidationError marks an error caused by invalid caller input (as opposed to a
+// server/storage failure), so HTTP handlers can map it to 400 rather than 500.
+type ValidationError struct{ Msg string }
+
+func (e *ValidationError) Error() string { return e.Msg }
+
+func validationErrf(format string, args ...any) error {
+	return &ValidationError{Msg: fmt.Sprintf(format, args...)}
+}
+
 // Prefixes appear unescaped in display IDs (PREFIX-123) across every web view and
 // in API URL paths, so they are constrained to a safe charset at the create
 // boundary rather than relied on to be escaped at every output site.
@@ -17,13 +27,13 @@ var prefixRe = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]*$`)
 func normalizePrefix(prefix string) (string, error) {
 	p := strings.ToUpper(strings.TrimSpace(prefix))
 	if p == "" {
-		return "", fmt.Errorf("project prefix is required")
+		return "", validationErrf("project prefix is required")
 	}
 	if len(p) > 16 {
-		return "", fmt.Errorf("project prefix too long (max 16 chars): %q", prefix)
+		return "", validationErrf("project prefix too long (max 16 chars): %q", prefix)
 	}
 	if !prefixRe.MatchString(p) {
-		return "", fmt.Errorf("invalid project prefix %q: use letters, digits, '-' or '_' (must start alphanumeric)", prefix)
+		return "", validationErrf("invalid project prefix %q: use letters, digits, '-' or '_' (must start alphanumeric)", prefix)
 	}
 	return p, nil
 }
