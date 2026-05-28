@@ -55,8 +55,11 @@ var adoPullCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("\nPull complete: %d created, %d updated, %d unchanged, %d skipped\n",
-			stats.Created, stats.Updated, stats.Unchanged, stats.Skipped)
+		fmt.Printf("\nPull complete: %d created, %d updated, %d unchanged, %d skipped, %d failed\n",
+			stats.Created, stats.Updated, stats.Unchanged, stats.Skipped, stats.Failed)
+		if stats.Failed > 0 {
+			return fmt.Errorf("%d item(s) failed to sync — see warnings above", stats.Failed)
+		}
 		return nil
 	},
 }

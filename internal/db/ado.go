@@ -14,6 +14,8 @@ type ProjectInfo struct {
 type TaskRecord struct {
 	ID           string
 	Status       string
+	Title        string
+	Description  string
 	AgentContext string
 	UpdatedAt    time.Time
 }
@@ -22,7 +24,7 @@ type TaskRecord struct {
 func LoadAdoTaskIndex(conn *sql.DB, projectID string) map[int]*TaskRecord {
 	index := map[int]*TaskRecord{}
 
-	rows, err := conn.Query(`SELECT id, status, agent_context, updated_at FROM tasks WHERE project_id = ? AND source_type = 'ado'`, projectID)
+	rows, err := conn.Query(`SELECT id, status, title, description, agent_context, updated_at FROM tasks WHERE project_id = ? AND source_type = 'ado'`, projectID)
 	if err != nil {
 		return index
 	}
@@ -31,7 +33,7 @@ func LoadAdoTaskIndex(conn *sql.DB, projectID string) map[int]*TaskRecord {
 	for rows.Next() {
 		var t TaskRecord
 		var updatedAt string
-		if err := rows.Scan(&t.ID, &t.Status, &t.AgentContext, &updatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Status, &t.Title, &t.Description, &t.AgentContext, &updatedAt); err != nil {
 			continue
 		}
 		t.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)

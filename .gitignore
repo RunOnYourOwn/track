@@ -1,6 +1,8 @@
 track
 cover.out
 *.db
+tools.yaml
+.deep-audit.md
 .DS_Store
 docs/*
 !docs/workflow.html

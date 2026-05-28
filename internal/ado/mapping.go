@@ -8,6 +8,8 @@ import (
 
 var stateToStatus = map[string]string{
 	"New":         "todo",
+	"Proposed":    "todo",
+	"To Do":       "todo",
 	"Backlog":     "todo",
 	"Approved":    "todo",
 	"Prioritised": "todo",
@@ -15,8 +17,10 @@ var stateToStatus = map[string]string{
 	"Ready":       "todo",
 	"Committed":   "in_progress",
 	"In Progress": "in_progress",
+	"Doing":       "in_progress",
 	"Active":      "in_progress",
 	"Validate":    "in_progress",
+	"Resolved":    "done",
 	"Finished":    "done",
 	"Done":        "done",
 	"Closed":      "done",

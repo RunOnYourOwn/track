@@ -75,8 +75,46 @@ func UpdateProjectField(d *sql.DB, id, field, value string) error {
 }
 
 func DeleteProject(db *sql.DB, id string) error {
-	_, err := db.Exec(`DELETE FROM projects WHERE id = ?`, id)
-	return err
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Defer FK enforcement to COMMIT so we don't have to order deletes around
+	// self-references (tasks.parent_id, decisions.supersedes_id). Without this,
+	// a bare DELETE FROM projects fails (FK 787) for any non-empty project.
+	if _, err := tx.Exec(`PRAGMA defer_foreign_keys = ON`); err != nil {
+		return err
+	}
+
+	taskSub := `(SELECT id FROM tasks WHERE project_id = ?)`
+	steps := []struct {
+		query string
+		args  []any
+	}{
+		{`DELETE FROM task_status_history WHERE task_id IN ` + taskSub, []any{id}},
+		{`DELETE FROM task_commits WHERE task_id IN ` + taskSub, []any{id}},
+		{`DELETE FROM dependencies WHERE from_task_id IN ` + taskSub + ` OR to_task_id IN ` + taskSub, []any{id, id}},
+		{`DELETE FROM sprint_tasks WHERE task_id IN ` + taskSub + ` OR sprint_id IN (SELECT id FROM sprints WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM time_entries WHERE task_id IN ` + taskSub + ` OR session_id IN (SELECT id FROM sessions WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM cross_project_deps WHERE source_project_id = ? OR target_project_id = ? OR source_task_id IN ` + taskSub + ` OR target_task_id IN ` + taskSub, []any{id, id, id, id}},
+		{`DELETE FROM decisions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM learnings WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM blockers WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM deploys WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM snapshots WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM sprints WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM tasks WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM sessions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM projects WHERE id = ?`, []any{id}},
+	}
+	for _, s := range steps {
+		if _, err := tx.Exec(s.query, s.args...); err != nil {
+			return fmt.Errorf("delete project: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 type scanner interface {

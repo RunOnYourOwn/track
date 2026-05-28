@@ -33,6 +33,7 @@ type Task struct {
 	SourceType    string     `json:"source_type"`
 	AgentContext  string     `json:"agent_context,omitempty"`
 	Tags          string     `json:"tags,omitempty"`
+	StartDate     *string    `json:"start_date,omitempty"`
 	DueDate       *string    `json:"due_date,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`

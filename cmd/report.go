@@ -581,11 +581,14 @@ var snapshotCmd = &cobra.Command{
 			return err
 		}
 
-		var total, done, inProgress, todo, blocked int
+		var total, done, inProgress, todo, blocked, rework int
 		var hoursDone, hoursRemaining float64
 
 		for _, t := range tasks {
 			total++
+			if t.IsRework {
+				rework++
+			}
 			switch t.Status {
 			case "done":
 				done++
@@ -605,6 +608,15 @@ var snapshotCmd = &cobra.Command{
 		score, _ := computeHealth(proj, tasks, proj.Prefix)
 		healthScore := float64(score)
 
+		flowEfficiency, err := db.ComputeFlowEfficiency(conn, proj.ID)
+		if err != nil {
+			return fmt.Errorf("compute flow efficiency: %w", err)
+		}
+		var reworkRate float64
+		if total > 0 {
+			reworkRate = float64(rework) / float64(total)
+		}
+
 		snap := models.Snapshot{
 			ID:             db.NewID(),
 			ProjectID:      proj.ID,
@@ -616,8 +628,8 @@ var snapshotCmd = &cobra.Command{
 			Blocked:        blocked,
 			HoursDone:      hoursDone,
 			HoursRemaining: hoursRemaining,
-			FlowEfficiency: 0, // placeholder
-			ReworkRate:     0, // placeholder
+			FlowEfficiency: flowEfficiency,
+			ReworkRate:     reworkRate,
 			HealthScore:    healthScore,
 		}
 

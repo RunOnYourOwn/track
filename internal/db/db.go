@@ -59,10 +59,14 @@ func Open() (*sql.DB, error) {
 
 	if err = configurePragmas(d); err != nil {
 		d.Close()
+		initErr = err
+		initDone = true
 		return nil, err
 	}
 	if err = migrate(d); err != nil {
 		d.Close()
+		initErr = err
+		initDone = true
 		return nil, err
 	}
 
@@ -87,6 +91,9 @@ func configurePragmas(db *sql.DB) error {
 		"PRAGMA temp_store = MEMORY",
 		"PRAGMA mmap_size = 134217728",
 		"PRAGMA foreign_keys = ON",
+		// Wait up to 5s for a held write lock instead of failing immediately with
+		// SQLITE_BUSY — matters when a CLI invocation writes while `serve` is running.
+		"PRAGMA busy_timeout = 5000",
 	}
 	for _, p := range pragmas {
 		if _, err := db.Exec(p); err != nil {
@@ -101,14 +108,81 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	// Add columns that may not exist in older databases
-	migrations := []string{
+
+	// --- Legacy bootstrap (frozen) ---
+	// Best-effort, additive-only fixups for databases created before these
+	// columns existed in `schema`. Errors are intentionally ignored (the common
+	// one is "duplicate column" on an already-upgraded DB). Do NOT add new schema
+	// changes here — use the versioned runner below instead.
+	legacy := []string{
 		`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`,
 		`ALTER TABLE tasks ADD COLUMN estimate_agent_minutes INTEGER DEFAULT 0`,
 		`ALTER TABLE projects ADD COLUMN external_id TEXT DEFAULT ''`,
 	}
+	for _, m := range legacy {
+		_, _ = db.Exec(m)
+	}
+	// Backstop for the seq-allocation race; best-effort on legacy DBs with dupes.
+	_, _ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_project_seq_uq ON tasks(project_id, seq)`)
+
+	// --- Versioned migrations ---
+	// All NEW schema changes go here. Each runs exactly once (tracked in
+	// schema_migrations), in a transaction, with errors surfaced (not swallowed).
+	// This is the path for non-additive changes (column type changes, splits,
+	// backfills) that the legacy additive bootstrap can't express.
+	return runMigrations(db, orderedMigrations)
+}
+
+type migration struct {
+	version int
+	name    string
+	stmts   []string
+}
+
+// orderedMigrations is the forward-only, versioned migration list. Append new
+// entries with strictly increasing versions; never edit or reorder applied ones.
+var orderedMigrations = []migration{
+	{version: 1, name: "add tasks.start_date", stmts: []string{
+		`ALTER TABLE tasks ADD COLUMN start_date TEXT`,
+	}},
+}
+
+func runMigrations(db *sql.DB, migrations []migration) error {
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version    INTEGER PRIMARY KEY,
+		name       TEXT NOT NULL,
+		applied_at TEXT NOT NULL
+	)`); err != nil {
+		return fmt.Errorf("create schema_migrations: %w", err)
+	}
+
+	var current int
+	if err := db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+
 	for _, m := range migrations {
-		_, _ = db.Exec(m) // ignore "duplicate column" errors
+		if m.version <= current {
+			continue
+		}
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		for _, stmt := range m.stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d (%s): %w", m.version, m.name, err)
+			}
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`,
+			m.version, m.name, Now()); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("record migration %d: %w", m.version, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %d: %w", m.version, err)
+		}
 	}
 	return nil
 }

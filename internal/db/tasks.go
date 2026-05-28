@@ -34,29 +34,28 @@ type CreateTaskOpts struct {
 	SourceType           string
 	AgentContext         string
 	Tags                 string
+	StartDate            string
 	DueDate              string
 }
 
 func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
-	id := NewID()
-	now := Now()
-
-	seq, err := nextSeq(d, opts.ProjectID)
-	if err != nil {
-		return nil, fmt.Errorf("next seq: %w", err)
-	}
-
 	priority := opts.Priority
 	if priority == "" {
 		priority = "medium"
+	} else if !validPriorities[priority] {
+		return nil, fmt.Errorf("invalid priority %q", priority)
 	}
 	taskType := opts.Type
 	if taskType == "" {
 		taskType = "task"
+	} else if !validTypes[taskType] {
+		return nil, fmt.Errorf("invalid type %q", taskType)
 	}
 	source := opts.SourceType
 	if source == "" {
 		source = "planned"
+	} else if !validSourceTypes[source] {
+		return nil, fmt.Errorf("invalid source_type %q", source)
 	}
 	agentCtx := opts.AgentContext
 	if agentCtx == "" {
@@ -71,30 +70,68 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 	if opts.ParentID != "" {
 		parentID = &opts.ParentID
 	}
+	var startDate *string
+	if opts.StartDate != "" {
+		startDate = &opts.StartDate
+	}
 	var dueDate *string
 	if opts.DueDate != "" {
 		dueDate = &opts.DueDate
 	}
 
-	tx, err := d.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
+	// Allocate seq inside the transaction and retry on a UNIQUE(project_id, seq)
+	// collision (possible when concurrent in-process callers or other processes
+	// race the MAX(seq) read). The unique index is the authority; we just retry.
+	var id string
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		id = NewID()
+		now := Now()
 
-	_, err = tx.Exec(`INSERT INTO tasks (id, project_id, seq, title, description, status, priority, type, estimate_size, estimate_hours, estimate_agent_minutes, parent_id, sort_order, source_type, agent_context, tags, due_date, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
-		id, opts.ProjectID, seq, opts.Title, opts.Description, priority, taskType, opts.EstimateSize, opts.EstimateHours, opts.EstimateAgentMinutes, parentID, source, agentCtx, tags, dueDate, now, now)
-	if err != nil {
-		return nil, fmt.Errorf("create task: %w", err)
-	}
+		tx, err := d.Begin()
+		if err != nil {
+			return nil, err
+		}
 
-	if _, err := tx.Exec(`INSERT INTO task_status_history (id, task_id, status, entered_at) VALUES (?, ?, 'todo', ?)`, NewID(), id, now); err != nil {
-		return nil, fmt.Errorf("create status history: %w", err)
-	}
+		var max sql.NullInt64
+		if err := tx.QueryRow(`SELECT MAX(seq) FROM tasks WHERE project_id = ?`, opts.ProjectID).Scan(&max); err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("next seq: %w", err)
+		}
+		seq := 1
+		if max.Valid {
+			seq = int(max.Int64) + 1
+		}
 
-	if err := tx.Commit(); err != nil {
-		return nil, err
+		_, err = tx.Exec(`INSERT INTO tasks (id, project_id, seq, title, description, status, priority, type, estimate_size, estimate_hours, estimate_agent_minutes, parent_id, sort_order, source_type, agent_context, tags, start_date, due_date, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+			id, opts.ProjectID, seq, opts.Title, opts.Description, priority, taskType, opts.EstimateSize, opts.EstimateHours, opts.EstimateAgentMinutes, parentID, source, agentCtx, tags, startDate, dueDate, now, now)
+		if err != nil {
+			tx.Rollback()
+			if isSeqConflict(err) {
+				lastErr = err
+				continue
+			}
+			return nil, fmt.Errorf("create task: %w", err)
+		}
+
+		if _, err := tx.Exec(`INSERT INTO task_status_history (id, task_id, status, entered_at) VALUES (?, ?, 'todo', ?)`, NewID(), id, now); err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("create status history: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			if isSeqConflict(err) {
+				lastErr = err
+				continue
+			}
+			return nil, err
+		}
+		lastErr = nil
+		break
+	}
+	if lastErr != nil {
+		return nil, fmt.Errorf("create task: seq allocation conflict: %w", lastErr)
 	}
 
 	if opts.ParentID != "" && source != "bug" && source != "debt" {
@@ -102,6 +139,12 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 	}
 
 	return GetTask(d, id)
+}
+
+// isSeqConflict reports whether err is a UNIQUE(project_id, seq) violation,
+// which the create loop retries with a freshly recomputed seq.
+func isSeqConflict(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }
 
 func autoReopenParent(db *sql.DB, parentID string) {
@@ -214,6 +257,11 @@ var validTypes = map[string]bool{
 	"task": true, "feature": true, "epic": true, "bug": true, "debt": true,
 }
 
+var validSourceTypes = map[string]bool{
+	"planned": true, "discovered": true, "stakeholder": true,
+	"bug": true, "debt": true, "ado": true,
+}
+
 func MoveTask(db *sql.DB, id, status string) error {
 	if !validStatuses[status] {
 		return fmt.Errorf("invalid status %q", status)
@@ -234,28 +282,52 @@ func moveTaskNoAutoClose(d *sql.DB, id, status string) error {
 	}
 	defer tx.Rollback()
 
-	now := Now()
-	tx.Exec(`UPDATE task_status_history SET exited_at = ? WHERE task_id = ? AND exited_at IS NULL`, now, id)
-	tx.Exec(`INSERT INTO task_status_history (id, task_id, status, entered_at) VALUES (?, ?, ?, ?)`, NewID(), id, status, now)
-
-	var completedAt *string
-	if status == "done" {
-		completedAt = &now
+	// Capture the previous status to detect rework (done → not-done reopen).
+	var prevStatus string
+	if err := tx.QueryRow(`SELECT status FROM tasks WHERE id = ?`, id).Scan(&prevStatus); err != nil {
+		return err
 	}
 
-	if _, err := tx.Exec(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?`,
-		status, now, completedAt, id); err != nil {
+	now := Now()
+	if _, err := tx.Exec(`UPDATE task_status_history SET exited_at = ? WHERE task_id = ? AND exited_at IS NULL`, now, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO task_status_history (id, task_id, status, entered_at) VALUES (?, ?, ?, ?)`, NewID(), id, status, now); err != nil {
 		return err
 	}
 
 	if status == "done" {
-		hours, err := computeActiveHours(tx, id)
-		if err != nil {
+		if _, err := tx.Exec(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
+			status, now, now, id); err != nil {
 			return err
 		}
-		if hours > 0 {
-			if _, err := tx.Exec(`UPDATE tasks SET actual_hours = ? WHERE id = ?`, hours, id); err != nil {
+	} else {
+		// Clear completed_at on any non-done status; mark rework when a previously
+		// completed task is reopened (the only signal that feeds rework_rate).
+		reopened := prevStatus == "done"
+		if _, err := tx.Exec(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = NULL, is_rework = CASE WHEN ? THEN 1 ELSE is_rework END WHERE id = ?`,
+			status, now, reopened, id); err != nil {
+			return err
+		}
+	}
+
+	if status == "done" {
+		// Only derive actual_hours from the in-progress time when the user hasn't
+		// logged time manually. LogTime accumulates real hours into actual_hours;
+		// overwriting them here (or in CompleteTask) would silently discard them.
+		var logged int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM time_entries WHERE task_id = ?`, id).Scan(&logged); err != nil {
+			return err
+		}
+		if logged == 0 {
+			hours, err := computeActiveHours(tx, id)
+			if err != nil {
 				return err
+			}
+			if hours > 0 {
+				if _, err := tx.Exec(`UPDATE tasks SET actual_hours = ? WHERE id = ?`, hours, id); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -293,7 +365,9 @@ func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) {
 	visited[childID] = true
 
 	var parentID sql.NullString
-	db.QueryRow(`SELECT parent_id FROM tasks WHERE id = ?`, childID).Scan(&parentID)
+	if err := db.QueryRow(`SELECT parent_id FROM tasks WHERE id = ?`, childID).Scan(&parentID); err != nil {
+		return
+	}
 	if !parentID.Valid || parentID.String == "" {
 		return
 	}
@@ -302,7 +376,11 @@ func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) {
 	}
 
 	var pending int
-	db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status != 'done'`, parentID.String).Scan(&pending)
+	// On a scan error, bail rather than treating pending as 0 — otherwise a
+	// transient DB error would auto-close a parent that still has open children.
+	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status != 'done'`, parentID.String).Scan(&pending); err != nil {
+		return
+	}
 	if pending > 0 {
 		return
 	}
@@ -362,7 +440,7 @@ func SetParentID(d *sql.DB, id, parentID string) error {
 
 var allowedTaskFields = map[string]bool{
 	"title": true, "description": true, "type": true, "priority": true,
-	"agent_context": true, "due_date": true, "sort_order": true,
+	"agent_context": true, "due_date": true, "start_date": true, "sort_order": true,
 	"estimate_size": true, "estimate_hours": true, "estimate_agent_minutes": true,
 	"actual_hours": true, "tags": true,
 }
@@ -404,6 +482,9 @@ func DeleteTask(d *sql.DB, id string) error {
 	tx.Exec(`DELETE FROM time_entries WHERE task_id = ?`, id)
 	tx.Exec(`DELETE FROM task_commits WHERE task_id = ?`, id)
 	tx.Exec(`DELETE FROM sprint_tasks WHERE task_id = ?`, id)
+	// cross_project_deps has non-nullable FKs to tasks(id); without this a task
+	// referenced by a cross-project dep can never be deleted (FK 787).
+	tx.Exec(`DELETE FROM cross_project_deps WHERE source_task_id = ? OR target_task_id = ?`, id, id)
 	tx.Exec(`UPDATE blockers SET task_id = NULL WHERE task_id = ?`, id)
 	tx.Exec(`UPDATE decisions SET task_id = NULL WHERE task_id = ?`, id)
 	tx.Exec(`UPDATE learnings SET task_id = NULL WHERE task_id = ?`, id)
@@ -491,17 +572,17 @@ func SuggestNext(db *sql.DB, projectID string) (*models.Task, error) {
 	return GetTask(db, id)
 }
 
-const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework FROM tasks t JOIN projects p ON t.project_id = p.id`
+const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.start_date, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework FROM tasks t JOIN projects p ON t.project_id = p.id`
 
 func scanTask(row *sql.Row) (*models.Task, error) {
 	var t models.Task
-	var parentID, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
 	if err != nil {
 		return nil, err
 	}
@@ -516,6 +597,9 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 	t.Tags = tags.String
 	if parentID.Valid {
 		t.ParentID = &parentID.String
+	}
+	if startDate.Valid {
+		t.StartDate = &startDate.String
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String
@@ -532,13 +616,13 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 
 func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	var t models.Task
-	var parentID, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
 	if err != nil {
 		return nil, err
 	}
@@ -553,6 +637,9 @@ func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	t.Tags = tags.String
 	if parentID.Valid {
 		t.ParentID = &parentID.String
+	}
+	if startDate.Valid {
+		t.StartDate = &startDate.String
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String

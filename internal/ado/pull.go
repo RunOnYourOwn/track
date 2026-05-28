@@ -15,6 +15,7 @@ type PullStats struct {
 	Updated   int
 	Unchanged int
 	Skipped   int
+	Failed    int
 }
 
 type AgentContext struct {
@@ -27,6 +28,7 @@ type AgentContext struct {
 	AdoAssigned  string `json:"ado_assigned"`
 	AdoURL       string `json:"ado_url"`
 	AdoStartDate string `json:"ado_start_date,omitempty"`
+	AdoState     string `json:"ado_state,omitempty"` // last-synced raw ADO state, for push dedup
 	LastSyncedAt string `json:"last_synced_at"`
 }
 
@@ -39,16 +41,22 @@ func Pull(conn *sql.DB, cfg *Config, teamFilter string, dryRun bool) (*PullStats
 	client := NewClient(cfg.Org, pat)
 	stats := &PullStats{}
 
+	var syncErrs []string
 	for _, sync := range cfg.Syncs {
 		if teamFilter != "" && !strings.EqualFold(sync.TrackProject, teamFilter) {
 			continue
 		}
 
 		if err := pullTeam(conn, client, cfg, sync, stats, dryRun); err != nil {
-			return stats, fmt.Errorf("sync %s: %w", sync.TrackProject, err)
+			fmt.Printf("  warning: sync %s failed: %v\n", sync.TrackProject, err)
+			syncErrs = append(syncErrs, fmt.Sprintf("%s: %v", sync.TrackProject, err))
+			continue
 		}
 	}
 
+	if len(syncErrs) > 0 {
+		return stats, fmt.Errorf("%d team sync(s) failed: %s", len(syncErrs), strings.Join(syncErrs, "; "))
+	}
 	return stats, nil
 }
 
@@ -71,10 +79,8 @@ func pullTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 		WiqlEscape(sync.Project), assignedFilter,
 	)
 
-	// URL-encode team name
-	team := strings.ReplaceAll(sync.Team, " ", "%20")
-
-	wiqlResult, err := client.RunWIQL(sync.Project, team, query, 200)
+	// The client percent-encodes path segments; pass the raw team name.
+	wiqlResult, err := client.RunWIQL(sync.Project, sync.Team, query, 200)
 	if err != nil {
 		return fmt.Errorf("WIQL: %w", err)
 	}
@@ -119,6 +125,7 @@ func pullTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 		result, err := upsertWorkItem(conn, cfg, sync, project, wi, existingTasks, dryRun)
 		if err != nil {
 			fmt.Printf("  warning: item %d: %v\n", wi.ID, err)
+			stats.Failed++
 			continue
 		}
 
@@ -168,6 +175,7 @@ func upsertWorkItem(conn *sql.DB, cfg *Config, sync SyncConfig, project *db.Proj
 		AdoIteration: iteration,
 		AdoAssigned:  assignedTo,
 		AdoURL:       fmt.Sprintf("https://dev.azure.com/%s/%s/_workitems/edit/%d", cfg.Org, sync.Project, wi.ID),
+		AdoState:     state,
 		LastSyncedAt: now,
 	}
 	if startDate != "" {

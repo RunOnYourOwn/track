@@ -287,7 +287,7 @@ var learnSearchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		conn, _ := db.Open()
 
-		learnings, err := db.SearchLearnings(conn, args[0])
+		learnings, err := db.SearchLearnings(conn, "", args[0])
 		if err != nil {
 			return err
 		}

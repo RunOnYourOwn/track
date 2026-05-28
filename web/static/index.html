@@ -18,15 +18,17 @@
       <a href="#/knowledge">Knowledge</a>
       <a href="#/insights">Insights</a>
     </div>
-    <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-left:auto;">v0.1</span>
+    <span style="font-family:var(--font-mono);font-size:9px;color:var(--muted);margin-left:auto;">v0.2</span>
   </nav>
   <main id="app"></main>
 
-  <!-- Vendor -->
-  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <!-- Vendor (self-hosted: no CDN dependency, no SRI needed, CSP stays 'self') -->
+  <script src="/static/d3.min.js"></script>
 
   <!-- App core (globals: api, render, fmtDate, escHtml, router) -->
   <script src="/static/app.js"></script>
+  <!-- Shared components (must load before the view modules that use them) -->
+  <script src="/static/task-modal.js"></script>
   <!-- View modules -->
   <script src="/static/focus.js"></script>
   <script src="/static/kanban.js"></script>
@@ -36,7 +38,6 @@
   <script src="/static/tree.js"></script>
   <script src="/static/sessions.js"></script>
   <script src="/static/knowledge.js"></script>
-  <!-- Boot after all modules loaded -->
-  <script>router.start();</script>
+  <!-- Boot happens in app.js on DOMContentLoaded (no inline script — CSP forbids it). -->
 </body>
 </html>

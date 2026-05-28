@@ -446,4 +446,12 @@ router.register('/sessions',  () => renderSessions());
 router.register('/knowledge', () => renderKnowledge());
 router.register('/insights',  () => renderInsights());
 
-// Boot: router.start() is called from index.html after all view modules load.
+// Boot once the document and all view-module scripts have loaded. Done here
+// (not via an inline <script>) so the Content-Security-Policy can forbid inline
+// scripts. DOMContentLoaded fires after all synchronous <script> tags execute,
+// so every render* global is defined by the time we dispatch the first route.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => router.start());
+} else {
+  router.start();
+}

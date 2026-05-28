@@ -120,7 +120,13 @@ func Run() error {
 		}
 		_ = enc.Encode(resp)
 	}
-	return scanner.Err()
+	// Surface why the loop ended (e.g. bufio.ErrTooLong on a >10MB line) on
+	// stderr so the operator isn't left guessing why the server went quiet.
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintf(os.Stderr, "mcp: input scan stopped: %v\n", err)
+		return err
+	}
+	return nil
 }
 
 func handleRequest(conn *sql.DB, req Request) *Response {
@@ -640,7 +646,18 @@ func handleSessionStart(conn *sql.DB, args map[string]any) (*ToolCallResult, err
 
 func handleSessionEnd(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
 	project := strArg(args, "project")
-	projectID, _ := resolveProjectID(conn, project)
+	// Only resolve when a project was given. An empty project intentionally means
+	// "end the most recent active session across all projects"; a NON-empty but
+	// unresolvable prefix must error rather than silently fall back to "" (which
+	// would end an unrelated project's session).
+	var projectID string
+	if project != "" {
+		pid, err := resolveProjectID(conn, project)
+		if err != nil {
+			return nil, err
+		}
+		projectID = pid
+	}
 	session, err := db.GetCurrentSession(conn, projectID)
 	if err != nil || session == nil {
 		return nil, fmt.Errorf("no active session")
@@ -665,10 +682,13 @@ func handleSessionLog(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 	hours := floatArg(args, "hours")
 	note := strArg(args, "note")
 
+	// Attribute to the active session of the task's OWN project, not just the
+	// globally most-recent session (which could belong to a different project).
 	var sessionID string
-	sess, _ := db.GetCurrentSession(conn, "")
-	if sess != nil {
-		sessionID = sess.ID
+	if task, err := db.GetTask(conn, taskID); err == nil {
+		if sess, _ := db.GetCurrentSession(conn, task.ProjectID); sess != nil {
+			sessionID = sess.ID
+		}
 	}
 
 	if err := db.LogTime(conn, taskID, sessionID, hours, note); err != nil {
@@ -778,7 +798,7 @@ func handleLearnSearch(conn *sql.DB, args map[string]any) (*ToolCallResult, erro
 	if query == "" {
 		return nil, fmt.Errorf("query is required")
 	}
-	learnings, err := db.SearchLearnings(conn, query)
+	learnings, err := db.SearchLearnings(conn, "", query)
 	if err != nil {
 		return nil, err
 	}

@@ -271,15 +271,22 @@ func ListLearnings(db *sql.DB, projectID, category string) ([]models.Learning, e
 	return learnings, rows.Err()
 }
 
-// SearchLearnings does a LIKE search across title and body.
-// FTS5 upgrade can replace this later without changing the caller.
-func SearchLearnings(db *sql.DB, query string) ([]models.Learning, error) {
-	rows, err := db.Query(`
+// SearchLearnings does a LIKE search across title and body. When projectID is
+// non-empty the search is scoped to that project (empty = all projects, used by
+// the MCP global-search tool). FTS5 can replace this later without API change.
+func SearchLearnings(db *sql.DB, projectID, query string) ([]models.Learning, error) {
+	q := `
 		SELECT id, project_id, task_id, title, body, category, applies_to, created_at
 		FROM learnings
-		WHERE title LIKE '%'||?||'%' OR body LIKE '%'||?||'%'
-		ORDER BY created_at DESC`,
-		query, query)
+		WHERE (title LIKE '%'||?||'%' OR body LIKE '%'||?||'%')`
+	args := []any{query, query}
+	if projectID != "" {
+		q += ` AND project_id = ?`
+		args = append(args, projectID)
+	}
+	q += ` ORDER BY created_at DESC`
+
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

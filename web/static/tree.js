@@ -257,6 +257,17 @@ function _attachListeners() {
     });
   });
 
+  // Position the open menu at its button (fixed → not clipped by table/container overflow).
+  if (_menuOpen) {
+    const menu = document.querySelector('.tt-actions-menu');
+    const btn = document.querySelector(`[data-menu-id="${_menuOpen}"]`);
+    if (menu && btn) {
+      const r = btn.getBoundingClientRect();
+      menu.style.top = (r.bottom + 2) + 'px';
+      menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
+    }
+  }
+
   // Close menu on outside click
   document.addEventListener('click', () => { if (_menuOpen) { _menuOpen = null; _drawTable(); } }, { once: true });
 
@@ -516,135 +527,17 @@ async function _bulkDelete() {
 function _openDetail(id) {
   const task = _tasks.find(t => t.id === id);
   if (!task) return;
-  const displayId = `${_prefix}-${task.seq}`;
-
-  // Find parent breadcrumb
-  let breadcrumb = '';
-  if (task.parent_id) {
-    const parent = _tasks.find(t => t.id === task.parent_id);
-    if (parent) {
-      breadcrumb = escHtml(parent.title);
-      if (parent.parent_id) {
-        const gp = _tasks.find(t => t.id === parent.parent_id);
-        if (gp) breadcrumb = escHtml(gp.title) + ' → ' + breadcrumb;
-      }
-    }
-  }
-
-  const overlay = document.createElement('div');
-  overlay.className = 'tt-modal-overlay';
-  overlay.innerHTML = `
-    <div class="tt-modal">
-      <div class="tt-modal-title">${displayId}: ${escHtml(task.title)}</div>
-      ${breadcrumb ? `<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">📂 ${breadcrumb}</div>` : ''}
-      <div class="tt-modal-field">
-        <label class="tt-modal-label">Title</label>
-        <input class="tt-modal-input" id="md-title" value="${escHtml(task.title)}">
-      </div>
-      <div class="tt-modal-field">
-        <label class="tt-modal-label">Description</label>
-        <textarea class="tt-modal-textarea" id="md-desc" rows="8">${escHtml(task.description || '')}</textarea>
-      </div>
-      <div class="tt-modal-row">
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Type</label>
-          <select class="tt-modal-input" id="md-type">${TYPES.map(t => `<option value="${t}" ${t === (task.type || 'task') ? 'selected' : ''}>${t}</option>`).join('')}</select>
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Priority</label>
-          <select class="tt-modal-input" id="md-priority">${PRIORITIES.map(p => `<option value="${p}" ${p === task.priority ? 'selected' : ''}>${p}</option>`).join('')}</select>
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Status</label>
-          <select class="tt-modal-input" id="md-status">${STATUSES.map(s => `<option value="${s}" ${s === task.status ? 'selected' : ''}>${s.replace(/_/g,' ')}</option>`).join('')}</select>
-        </div>
-      </div>
-      <div class="tt-modal-row">
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Estimate Size</label>
-          <select class="tt-modal-input" id="md-size">${SIZES.map(s => `<option value="${s}" ${s === (task.estimate_size || '') ? 'selected' : ''}>${s || '—'}</option>`).join('')}</select>
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Hours</label>
-          <input class="tt-modal-input" id="md-hours" type="number" step="0.5" min="0" value="${task.estimate_hours || ''}">
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Agent min</label>
-          <input class="tt-modal-input" id="md-agent-min" type="number" min="0" value="${task.estimate_agent_minutes || ''}">
-        </div>
-      </div>
-      <div class="tt-modal-row">
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Due date</label>
-          <input class="tt-modal-input" id="md-due" type="date" value="${task.due_date || ''}">
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Tags</label>
-          <input class="tt-modal-input" id="md-tags" value="${escHtml(task.tags || '')}">
-        </div>
-      </div>
-      <div class="tt-modal-field">
-        <label class="tt-modal-label">Parent</label>
-        <select class="tt-modal-input" id="md-parent">
-          <option value="">(none)</option>
-          ${_tasks.filter(t => t.id !== task.id && (t.type === 'epic' || t.type === 'feature')).map(t => `<option value="${t.id}" ${task.parent_id === t.id ? 'selected' : ''}>${_prefix}-${t.seq} ${escHtml(t.title.length > 40 ? t.title.slice(0, 37) + '...' : t.title)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="tt-modal-actions">
-        <button class="tt-modal-btn danger" id="md-delete">Delete</button>
-        <div>
-          <button class="tt-modal-btn" id="md-cancel">Cancel</button>
-          <button class="tt-modal-btn primary" id="md-save" style="margin-left:8px;">Save</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector('#md-cancel').addEventListener('click', () => overlay.remove());
-  overlay.querySelector('#md-delete').addEventListener('click', async () => {
-    overlay.remove();
-    _deleteTask(id);
-  });
-  overlay.querySelector('#md-save').addEventListener('click', async () => {
-    const body = {};
-    const title = overlay.querySelector('#md-title').value;
-    const desc = overlay.querySelector('#md-desc').value;
-    const type = overlay.querySelector('#md-type').value;
-    const priority = overlay.querySelector('#md-priority').value;
-    const status = overlay.querySelector('#md-status').value;
-    const size = overlay.querySelector('#md-size').value;
-    const hours = parseFloat(overlay.querySelector('#md-hours').value) || 0;
-    const agentMin = parseInt(overlay.querySelector('#md-agent-min').value) || 0;
-    const due = overlay.querySelector('#md-due').value;
-    const tags = overlay.querySelector('#md-tags').value;
-    const parentId = overlay.querySelector('#md-parent').value;
-
-    if (title !== task.title) body.title = title;
-    if (desc !== (task.description || '')) body.description = desc;
-    if (type !== (task.type || 'task')) body.type = type;
-    if (priority !== task.priority) body.priority = priority;
-    if (status !== task.status) body.status = status;
-    if (size !== (task.estimate_size || '')) body.estimate_size = size;
-    if (hours !== (task.estimate_hours || 0)) body.estimate_hours = hours;
-    if (agentMin !== (task.estimate_agent_minutes || 0)) body.estimate_agent_minutes = agentMin;
-    if (due !== (task.due_date || '')) body.due_date = due;
-    if (tags !== (task.tags || '')) body.tags = tags;
-    if (parentId !== (task.parent_id || '')) body.parent_id = parentId;
-
-    if (Object.keys(body).length === 0) { overlay.remove(); return; }
-
-    try {
-      const updated = await api.patch(`/tasks/${id}`, body);
-      const idx = _tasks.findIndex(t => t.id === id);
-      if (idx >= 0) _tasks[idx] = updated;
-      overlay.remove();
-      _drawTable();
-    } catch (err) {
-      alert('Save failed: ' + err.message);
-    }
+  // Use the shared task modal (same editor as the board/focus/timeline). It
+  // includes the Parent dropdown, so the tree can re-parent from here too.
+  const refresh = async () => {
+    _tasks = await api.get(`/projects/${_prefix}/tasks`);
+    _drawTable();
+  };
+  openTaskModal(task, {
+    prefix: _prefix,
+    allTasks: _tasks,
+    onSaved: refresh,
+    onDeleted: () => { _selected.delete(id); refresh(); },
   });
 }
 

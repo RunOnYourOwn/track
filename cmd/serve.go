@@ -1,18 +1,22 @@
 package cmd
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/RunOnYourOwn/track/internal/db"
 	"github.com/RunOnYourOwn/track/web"
@@ -47,11 +51,19 @@ var serveCmd = &cobra.Command{
 
 		// If not foreground and not already the child process, fork and exit
 		if !fg && os.Getenv("_TRACK_CHILD") == "" {
-			// Stop any existing server first
+			// Stop any existing server first, and wait for it to exit so the new
+			// child can bind the port (otherwise the restart races and the child
+			// fails with "address already in use").
 			if data, err := os.ReadFile(pidFile()); err == nil {
 				if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
 					if proc, err := os.FindProcess(pid); err == nil {
 						_ = proc.Signal(syscall.SIGTERM)
+						for i := 0; i < 50; i++ {
+							if sigErr := proc.Signal(syscall.Signal(0)); sigErr != nil {
+								break // old process has exited
+							}
+							time.Sleep(100 * time.Millisecond)
+						}
 					}
 				}
 				_ = os.Remove(pidFile())
@@ -105,19 +117,50 @@ var serveCmd = &cobra.Command{
 			http.ServeFileFS(w, r, staticFS, "index.html")
 		})
 
-		// Handle graceful shutdown
+		srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: securityMiddleware(mux)}
+
+		// Graceful shutdown: drain in-flight requests on SIGTERM/SIGINT, then let
+		// PersistentPostRun close the DB (which checkpoints WAL).
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		go func() {
 			<-sigCh
-			_ = os.Remove(pidFile())
-			_ = db.Close()
-			os.Exit(0)
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
 		}()
 
-		addr := fmt.Sprintf(":%d", port)
-		return http.ListenAndServe(addr, mux)
+		err = srv.ListenAndServe()
+		_ = os.Remove(pidFile())
+		if err == http.ErrServerClosed {
+			return nil
+		}
+		return err
 	},
+}
+
+// securityMiddleware recovers panics (so one bad request can't crash the daemon)
+// and sets security headers — including the Content-Security-Policy — on EVERY
+// response, not just /api/* . The CSP forbids inline scripts, which is what
+// neutralizes injected markup like <img onerror=...> in the rendered DOM.
+func securityMiddleware(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; script-src 'self'; " +
+		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic serving %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+			}
+		}()
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Content-Security-Policy", csp)
+		next.ServeHTTP(w, r)
+	})
 }
 
 var serverStatusCmd = &cobra.Command{

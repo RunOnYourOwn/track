@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -56,12 +57,12 @@ type BatchResult struct {
 }
 
 func (c *Client) RunWIQL(project, team, query string, top int) (*WIQLResult, error) {
-	url := fmt.Sprintf("%s/%s/%s/%s/_apis/wit/wiql?$top=%d&api-version=%s",
-		c.baseURL, c.org, project, team, top, apiVersion)
+	reqURL := fmt.Sprintf("%s/%s/%s/%s/_apis/wit/wiql?$top=%d&api-version=%s",
+		c.baseURL, url.PathEscape(c.org), url.PathEscape(project), url.PathEscape(team), top, apiVersion)
 
 	body := fmt.Sprintf(`{"query": %s}`, jsonString(query))
 
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	req, err := http.NewRequest("POST", reqURL, strings.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (c *Client) RunWIQL(project, team, query string, top int) (*WIQLResult, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return nil, fmt.Errorf("WIQL failed (HTTP %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -115,10 +116,10 @@ func (c *Client) fetchWorkItemBatch(project string, batch []int) ([]WorkItem, er
 		idStrs[j] = fmt.Sprintf("%d", id)
 	}
 
-	url := fmt.Sprintf("%s/%s/%s/_apis/wit/workitems?ids=%s&$expand=relations&api-version=%s",
-		c.baseURL, c.org, project, strings.Join(idStrs, ","), apiVersion)
+	reqURL := fmt.Sprintf("%s/%s/%s/_apis/wit/workitems?ids=%s&$expand=relations&api-version=%s",
+		c.baseURL, url.PathEscape(c.org), url.PathEscape(project), strings.Join(idStrs, ","), apiVersion)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +132,7 @@ func (c *Client) fetchWorkItemBatch(project string, batch []int) ([]WorkItem, er
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return nil, fmt.Errorf("get work items failed (HTTP %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -154,15 +155,15 @@ type PatchOperation struct {
 }
 
 func (c *Client) UpdateWorkItem(project string, id int, ops []PatchOperation) (*WorkItem, error) {
-	url := fmt.Sprintf("%s/%s/%s/_apis/wit/workitems/%d?api-version=%s",
-		c.baseURL, c.org, project, id, apiVersion)
+	reqURL := fmt.Sprintf("%s/%s/%s/_apis/wit/workitems/%d?api-version=%s",
+		c.baseURL, url.PathEscape(c.org), url.PathEscape(project), id, apiVersion)
 
 	body, err := json.Marshal(ops)
 	if err != nil {
 		return nil, fmt.Errorf("marshal patch ops: %w", err)
 	}
 
-	req, err := http.NewRequest("PATCH", url, strings.NewReader(string(body)))
+	req, err := http.NewRequest("PATCH", reqURL, strings.NewReader(string(body)))
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +177,7 @@ func (c *Client) UpdateWorkItem(project string, id int, ops []PatchOperation) (*
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		return nil, fmt.Errorf("update work item %d failed (HTTP %d): %s", id, resp.StatusCode, string(respBody))
 	}
 
