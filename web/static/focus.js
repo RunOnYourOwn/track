@@ -34,12 +34,16 @@ async function renderFocus(prefix) {
 function _draw() {
   if (_timerInterval) { clearInterval(_timerInterval); _timerInterval = null; }
 
+  // Focus is about the actual unit of work — leaf tasks (incl. subtasks), not
+  // the feature/epic containers they roll up into.
+  const isWorkTask = t => (t.type || 'task') === 'task';
+
   const inProgress = _tasks
-    .filter(t => t.status === 'in_progress' && (t.type || 'task') !== 'epic')
+    .filter(t => t.status === 'in_progress' && isWorkTask(t))
     .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
   const queue = _tasks
-    .filter(t => t.status === 'todo' && !t.blocked && (t.type || 'task') !== 'epic')
+    .filter(t => t.status === 'todo' && !t.blocked && isWorkTask(t))
     .sort((a, b) => {
       const pa = PRIORITY_ORDER[a.priority] ?? 99;
       const pb = PRIORITY_ORDER[b.priority] ?? 99;
@@ -49,7 +53,7 @@ function _draw() {
     .slice(0, 3);
 
   const recentDone = _tasks
-    .filter(t => t.status === 'done' && t.completed_at)
+    .filter(t => t.status === 'done' && t.completed_at && isWorkTask(t))
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at))
     .slice(0, 3);
 
@@ -57,7 +61,7 @@ function _draw() {
 
   // WIP summary
   const wipCount = inProgress.length;
-  const waiting = _tasks.filter(t => t.status.startsWith('waiting')).length;
+  const waiting = _tasks.filter(t => t.status.startsWith('waiting') && isWorkTask(t)).length;
   html += `<div class="focus-wip-bar">
     <span class="focus-wip-active">${wipCount} active</span>
     ${waiting > 0 ? `<span class="focus-wip-waiting">${waiting} waiting</span>` : ''}

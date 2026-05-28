@@ -1,4 +1,7 @@
-// kanban.js — Kanban board view (Azure DevOps style: features with inline task lists)
+// kanban.js — Kanban board view (task-centric: every leaf task is a card placed
+// in the column matching its OWN status; features/epics are shown as a label on
+// each card, not as cards). A single task moves independently, and subtasks at
+// any nesting depth always surface.
 // Depends on globals: api, render, fmtDate, fmtHours, priorityColor, escHtml
 // Exposes: renderKanban(prefix)
 
@@ -38,7 +41,6 @@ let _tasks   = [];
 let _filters = { priorities: [], sourceTypes: [], blockedOnly: false };
 let _dragTaskId   = null;
 let _dragFromCol  = null;
-let _expandedFeatures = {};
 let _collapsedColumns = new Set(['done']);
 let _doneCollapsed = true; // kept for backward compat with CSS class
 
@@ -87,7 +89,7 @@ function _toggleColumn(colId) {
 }
 
 function _statsBar() {
-  const boardTasks = _tasks.filter(t => (t.type || 'task') !== 'epic');
+  const boardTasks = _tasks.filter(t => (t.type || 'task') === 'task');
   const total = boardTasks.length;
   if (total === 0) return '';
   const done = boardTasks.filter(t => t.status === 'done').length;
@@ -159,56 +161,23 @@ function _filterBar() {
 }
 
 function _renderColumn(col, tasks) {
-  const colTasks = tasks.filter(t => _columnIdForStatus(t.status) === col.id);
-  const epicIds = new Set(_tasks.filter(t => t.type === 'epic').map(t => t.id));
-  const features = colTasks.filter(t => (t.type || 'task') === 'feature');
-  const orphanTasks = colTasks.filter(t => (t.type || 'task') === 'task' && (!t.parent_id || epicIds.has(t.parent_id)));
-
-  // Also find tasks that belong to features in THIS column
-  // (tasks may be in a different status than their parent feature)
-  const allTasks = _tasks.filter(t => (t.type || 'task') === 'task');
-  const tasksByParent = {};
-  allTasks.forEach(t => {
-    if (t.parent_id && !epicIds.has(t.parent_id)) {
-      if (!tasksByParent[t.parent_id]) tasksByParent[t.parent_id] = [];
-      tasksByParent[t.parent_id].push(t);
-    }
-  });
+  // Every leaf task (any nesting depth) is a card, placed by its OWN status.
+  const colTasks = tasks
+    .filter(t => (t.type || 'task') === 'task' && _columnIdForStatus(t.status) === col.id)
+    .sort((a, b) => {
+      const pa = PRIORITY_ORDER[a.priority] ?? 99;
+      const pb = PRIORITY_ORDER[b.priority] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return (a.seq ?? 0) - (b.seq ?? 0);
+    });
 
   const isInProgress = col.id === 'in_progress';
-  const totalCards = features.length + orphanTasks.length;
+  const totalCards = colTasks.length;
   const wipLimit = (_project && _project.wip_limit) || 5;
   const wip = isInProgress && totalCards >= wipLimit;
   const classes = ['kanban-column', wip ? 'wip-warning' : ''].filter(Boolean).join(' ');
 
-  // Sort features by priority
-  const sortedFeatures = [...features].sort((a, b) => {
-    const pa = PRIORITY_ORDER[a.priority] ?? 99;
-    const pb = PRIORITY_ORDER[b.priority] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return (a.seq ?? 0) - (b.seq ?? 0);
-  });
-
-  // Sort orphan tasks by priority
-  const sortedOrphans = [...orphanTasks].sort((a, b) => {
-    const pa = PRIORITY_ORDER[a.priority] ?? 99;
-    const pb = PRIORITY_ORDER[b.priority] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return (a.seq ?? 0) - (b.seq ?? 0);
-  });
-
-  let cards = '';
-  sortedFeatures.forEach(feat => {
-    let childTasks = tasksByParent[feat.id] || [];
-    if (_filters.blockedOnly) childTasks = childTasks.filter(t => t.blocked);
-    cards += _renderFeatureCard(feat, childTasks);
-  });
-
-  if (sortedOrphans.length > 0) {
-    sortedOrphans.forEach(t => {
-      cards += _renderTaskCard(t);
-    });
-  }
+  const cards = colTasks.map(t => _renderTaskCard(t)).join('');
 
   if (_collapsedColumns.has(col.id)) {
     return `
@@ -237,87 +206,6 @@ function _renderColumn(col, tasks) {
   `;
 }
 
-function _renderFeatureCard(feat, childTasks) {
-  const displayId = `${_prefix}-${feat.seq}`;
-  const title = feat.title && feat.title.length > 60 ? feat.title.slice(0, 59) + '…' : (feat.title || '');
-  const expanded = !!_expandedFeatures[feat.id];
-  const doneCount = childTasks.filter(t => t.status === 'done').length;
-  const totalCount = childTasks.length;
-  const pctDone = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
-  const stale = _staleDays(feat.updated_at);
-  const staleHtml = stale > STALE_DAYS
-    ? `<span class="stale-indicator" title="Last updated ${stale} days ago">⏱ ${stale}d</span>`
-    : '';
-  const epicName = _getEpicName(feat);
-  const epicHtml = epicName
-    ? `<div class="task-card-epic">${escHtml(epicName)}</div>`
-    : '';
-
-  let taskListHtml = '';
-  if (expanded && childTasks.length > 0) {
-    const sorted = [...childTasks].sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    });
-    taskListHtml = `
-      <div class="feature-task-list">
-        ${sorted.map(t => _renderInlineTask(t)).join('')}
-      </div>
-    `;
-  }
-
-  return `
-    <div class="feature-card"
-         draggable="true"
-         data-task-id="${feat.id}"
-         data-task-seq="${feat.seq}"
-         data-status="${feat.status}"
-         role="button"
-         tabindex="0"
-         aria-label="${displayId}: ${escHtml(feat.title)}">
-      <div class="feature-card-header">
-        <div class="feature-card-left">
-          <div class="feature-card-id">${displayId} ${staleHtml}</div>
-          <div class="feature-card-title">${escHtml(title)}</div>
-          ${epicHtml}
-        </div>
-        <span class="priority-badge feature-card-priority ${feat.priority}">${feat.priority}</span>
-      </div>
-      ${totalCount > 0 ? `
-        <div class="feature-card-progress">
-          <div class="feature-progress-bar">
-            <div class="feature-progress-fill" style="width:${pctDone}%"></div>
-          </div>
-          <span class="feature-progress-text">${doneCount}/${totalCount}</span>
-          <button class="feature-expand-btn" data-feature-id="${feat.id}" title="${expanded ? 'Collapse' : 'Expand'} tasks">
-            ${expanded ? '▾' : '▸'}
-          </button>
-        </div>
-        ${taskListHtml}
-      ` : ''}
-    </div>
-  `;
-}
-
-function _renderInlineTask(task) {
-  const displayId = `${_prefix}-${task.seq}`;
-  const isDone = task.status === 'done';
-  const isBlocked = task.status.startsWith('waiting');
-  const title = task.title && task.title.length > 40 ? task.title.slice(0, 39) + '…' : (task.title || '');
-  const statusClass = isDone ? 'done' : isBlocked ? 'blocked' : task.status === 'in_progress' ? 'active' : '';
-
-  return `
-    <div class="inline-task ${statusClass}" data-task-id="${task.id}" role="button" tabindex="0">
-      <span class="inline-task-check">${isDone ? '✓' : isBlocked ? '⏸' : '○'}</span>
-      <span class="inline-task-id">${displayId}</span>
-      <span class="inline-task-title">${escHtml(title)}</span>
-      <span class="priority-dot ${task.priority}" title="${task.priority}"></span>
-    </div>
-  `;
-}
-
 function _renderTaskCard(task) {
   const displayId = `${_prefix}-${task.seq}`;
   const title = task.title && task.title.length > 60 ? task.title.slice(0, 59) + '…' : (task.title || '');
@@ -328,9 +216,9 @@ function _renderTaskCard(task) {
   const blockedHtml = task.blocked
     ? `<span class="blocked-indicator" title="Blocked by dependency">●</span>`
     : '';
-  const epicName = _getEpicName(task);
-  const epicHtml = epicName
-    ? `<div class="task-card-epic">${escHtml(epicName)}</div>`
+  const parent = _parentLabel(task);
+  const epicHtml = parent
+    ? `<div class="task-card-epic" title="${escHtml(parent.full)}">${escHtml(parent.label)}</div>`
     : '';
 
   return `
@@ -415,32 +303,11 @@ function _attachBoardListeners() {
     });
   });
 
-  // Feature expand toggles
-  document.querySelectorAll('.feature-expand-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const fid = btn.dataset.featureId;
-      _expandedFeatures[fid] = !_expandedFeatures[fid];
-      _drawBoard();
-    });
-  });
-
   // Card click → detail
-  document.querySelectorAll('.feature-card, .task-card').forEach(card => {
-    card.addEventListener('click', (e) => {
-      if (e.target.closest('.feature-expand-btn')) return;
-      _openDetail(card.dataset.taskId);
-    });
+  document.querySelectorAll('.task-card').forEach(card => {
+    card.addEventListener('click', () => _openDetail(card.dataset.taskId));
     card.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _openDetail(card.dataset.taskId); }
-    });
-  });
-
-  // Inline task click → detail
-  document.querySelectorAll('.inline-task').forEach(el => {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      _openDetail(el.dataset.taskId);
     });
   });
 
@@ -448,7 +315,7 @@ function _attachBoardListeners() {
 }
 
 function _attachDragListeners() {
-  document.querySelectorAll('.feature-card[draggable], .task-card[draggable]').forEach(card => {
+  document.querySelectorAll('.task-card[draggable]').forEach(card => {
     card.addEventListener('dragstart', _onDragStart);
     card.addEventListener('dragend', _onDragEnd);
   });
@@ -484,7 +351,7 @@ async function _onDrop(e) {
   // Enforce WIP limit on In Progress
   if (targetCol === 'in_progress') {
     const wipLimit = (_project && _project.wip_limit) || 5;
-    const currentWip = _tasks.filter(t => t.status === 'in_progress').length;
+    const currentWip = _tasks.filter(t => t.status === 'in_progress' && (t.type || 'task') === 'task').length;
     if (currentWip >= wipLimit) {
       alert(`WIP limit reached (${wipLimit}). Complete or move an item before starting new work.`);
       return;
@@ -519,10 +386,7 @@ function _applyFilters(tasks) {
   let result = tasks;
   if (_filters.priorities.length > 0) result = result.filter(t => _filters.priorities.includes(t.priority));
   if (_filters.sourceTypes.length > 0) result = result.filter(t => _filters.sourceTypes.includes(t.source_type));
-  if (_filters.blockedOnly) {
-    const blockedParentIds = new Set(tasks.filter(t => t.blocked && t.parent_id).map(t => t.parent_id));
-    result = result.filter(t => t.blocked || blockedParentIds.has(t.id));
-  }
+  if (_filters.blockedOnly) result = result.filter(t => t.blocked);
   return result;
 }
 
@@ -531,16 +395,17 @@ function _staleDays(isoDate) {
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
 }
 
-function _getEpicName(task) {
+// Immediate-parent context label for a task card: the feature/epic it belongs
+// to, or — for a subtask — the parent task. Lets a card show where it sits at
+// any nesting depth without the board having to nest the cards themselves.
+function _parentLabel(task) {
   if (!task.parent_id) return null;
   const parent = _tasks.find(t => t.id === task.parent_id);
   if (!parent) return null;
-  if (parent.type === 'epic') return parent.title;
-  if (parent.parent_id) {
-    const grandparent = _tasks.find(t => t.id === parent.parent_id);
-    if (grandparent && grandparent.type === 'epic') return grandparent.title;
-  }
-  return null;
+  const pid = `${_prefix}-${parent.seq}`;
+  const title = parent.title || '';
+  const short = title.length > 32 ? title.slice(0, 31) + '…' : title;
+  return { label: `${short} ▸`, full: `${pid}: ${title}` };
 }
 
 function _getFeatureName(task) {

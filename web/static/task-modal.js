@@ -30,15 +30,39 @@ var openTaskModal = (function () {
     if (e.key === 'Escape') _close();
   }
 
+  // IDs of a task's own subtree (the task itself excluded), so the parent
+  // dropdown never offers a descendant — which would create a cycle.
+  function _descendantIds(rootId, all) {
+    const kids = {};
+    all.forEach(x => { if (x.parent_id) (kids[x.parent_id] = kids[x.parent_id] || []).push(x.id); });
+    const out = new Set();
+    const stack = [rootId];
+    while (stack.length) {
+      const id = stack.pop();
+      (kids[id] || []).forEach(c => { if (!out.has(c)) { out.add(c); stack.push(c); } });
+    }
+    return out;
+  }
+
   function _render() {
     const prefix = _opts.prefix || '';
     const allTasks = _opts.allTasks || [];
     const t = _task;
     const displayId = `${prefix}-${t.seq}`;
 
+    // A task can be parented under an epic, feature, OR another task (subtask
+    // decomposition). Exclude the task itself and its descendants to avoid cycles.
+    const blockedParents = _descendantIds(t.id, allTasks);
+    const typeOrder = { epic: 0, feature: 1, task: 2 };
     const parentOptions = allTasks
-      .filter(x => x.id !== t.id && (x.type === 'epic' || x.type === 'feature'))
-      .map(x => `<option value="${x.id}" ${t.parent_id === x.id ? 'selected' : ''}>${prefix}-${x.seq} ${escHtml(x.title.length > 40 ? x.title.slice(0, 37) + '...' : x.title)}</option>`)
+      .filter(x => x.id !== t.id && !blockedParents.has(x.id))
+      .sort((a, b) => {
+        const ta = typeOrder[a.type || 'task'] ?? 2;
+        const tb = typeOrder[b.type || 'task'] ?? 2;
+        if (ta !== tb) return ta - tb;
+        return (a.seq || 0) - (b.seq || 0);
+      })
+      .map(x => `<option value="${x.id}" ${t.parent_id === x.id ? 'selected' : ''}>${prefix}-${x.seq} · ${x.type || 'task'} · ${escHtml(x.title.length > 40 ? x.title.slice(0, 37) + '...' : x.title)}</option>`)
       .join('');
 
     // Parent → grandparent breadcrumb for context.
