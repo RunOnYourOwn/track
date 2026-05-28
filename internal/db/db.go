@@ -141,7 +141,11 @@ type migration struct {
 
 // orderedMigrations is the forward-only, versioned migration list. Append new
 // entries with strictly increasing versions; never edit or reorder applied ones.
-var orderedMigrations = []migration{}
+var orderedMigrations = []migration{
+	{version: 1, name: "add tasks.start_date", stmts: []string{
+		`ALTER TABLE tasks ADD COLUMN start_date TEXT`,
+	}},
+}
 
 func runMigrations(db *sql.DB, migrations []migration) error {
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (

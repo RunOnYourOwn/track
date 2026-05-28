@@ -36,7 +36,6 @@ let _prefix = '';
 let _project = null;
 let _tasks   = [];
 let _filters = { priorities: [], sourceTypes: [], blockedOnly: false };
-let _detail  = null;
 let _dragTaskId   = null;
 let _dragFromCol  = null;
 let _expandedFeatures = {};
@@ -46,7 +45,6 @@ let _doneCollapsed = true; // kept for backward compat with CSS class
 async function renderKanban(prefix) {
   _prefix  = prefix;
   _filters = { priorities: [], sourceTypes: [], blockedOnly: false };
-  _detail  = null;
 
   render('<div class="loading"><div class="spinner"></div> Loading board…</div>');
 
@@ -74,7 +72,6 @@ function _drawBoard() {
     <div class="kanban-board ${_doneCollapsed ? 'done-collapsed' : ''}" id="kanban-board">
       ${KANBAN_COLUMNS.map(col => _renderColumn(col, filtered)).join('')}
     </div>
-    ${_detail ? _renderDetailPanel(_detail) : ''}
   `;
   render(html);
   _attachBoardListeners();
@@ -357,80 +354,6 @@ function _renderTaskCard(task) {
   `;
 }
 
-function _renderDetailPanel(task) {
-  const displayId = `${_prefix}-${task.seq}`;
-  const epicName = _getEpicName(task);
-  const featureName = _getFeatureName(task);
-  const types = ['epic', 'feature', 'task'];
-  const priorities = ['urgent', 'high', 'medium', 'low'];
-  const statuses = ['todo', 'in_progress', 'done', 'blocked', 'waiting_external', 'waiting_decision', 'waiting_feedback'];
-  const sizes = ['', 'XS', 'S', 'M', 'L', 'XL'];
-  return `
-    <div class="tt-modal-overlay" id="detail-backdrop">
-      <div class="tt-modal" role="dialog" aria-label="Task detail">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-          <span style="font-family:var(--font-mono);font-size:12px;color:var(--muted);">${displayId}</span>
-          <button class="modal-close" id="detail-close" aria-label="Close">&times;</button>
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Title</label>
-          <input class="tt-modal-input" id="detail-title" value="${escHtml(task.title)}">
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Description</label>
-          <textarea class="tt-modal-textarea" id="detail-description" rows="8">${escHtml(task.description || '')}</textarea>
-        </div>
-        <div class="tt-modal-row">
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Type</label>
-            <select class="tt-modal-input" id="detail-type">${types.map(t => `<option value="${t}" ${(task.type || 'task') === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
-          </div>
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Priority</label>
-            <select class="tt-modal-input" id="detail-priority">${priorities.map(p => `<option value="${p}" ${task.priority === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
-          </div>
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Status</label>
-            <select class="tt-modal-input" id="detail-status">${statuses.map(s => `<option value="${s}" ${task.status === s ? 'selected' : ''}>${s.replace(/_/g, ' ')}</option>`).join('')}</select>
-          </div>
-        </div>
-        <div class="tt-modal-row">
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Estimate Size</label>
-            <select class="tt-modal-input" id="detail-estimate-size">${sizes.map(s => `<option value="${s}" ${(task.estimate_size || '') === s ? 'selected' : ''}>${s || '—'}</option>`).join('')}</select>
-          </div>
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Hours</label>
-            <input class="tt-modal-input" id="detail-hours" type="number" step="0.25" value="${task.estimate_hours || ''}">
-          </div>
-          <div class="tt-modal-field">
-            <label class="tt-modal-label">Due Date</label>
-            <input class="tt-modal-input" id="detail-due" type="date" value="${task.due_date || ''}">
-          </div>
-        </div>
-        <div class="tt-modal-field">
-          <label class="tt-modal-label">Parent</label>
-          <select class="tt-modal-input" id="detail-parent">
-            <option value="">(none)</option>
-            ${_tasks.filter(t => t.id !== task.id && (t.type === 'epic' || t.type === 'feature')).map(t => `<option value="${t.id}" ${task.parent_id === t.id ? 'selected' : ''}>${_prefix}-${t.seq} ${escHtml(t.title.length > 40 ? t.title.slice(0, 37) + '...' : t.title)}</option>`).join('')}
-          </select>
-        </div>
-        <div class="stat-row mt-8"><span class="stat-label">Source</span><span class="stat-value">${escHtml(task.source_type || '—')}</span></div>
-        <div class="stat-row"><span class="stat-label">Created</span><span class="stat-value">${fmtDate(task.created_at)}</span></div>
-        <div class="stat-row"><span class="stat-label">Updated</span><span class="stat-value">${fmtDate(task.updated_at)}</span></div>
-        <div id="detail-deps-container" class="mt-16"><p class="text-muted">Loading deps…</p></div>
-        <div class="tt-modal-actions">
-          <button class="tt-modal-btn danger" id="detail-delete">Delete</button>
-          <div style="display:flex;gap:8px;">
-            <button class="tt-modal-btn" id="detail-cancel">Cancel</button>
-            <button class="tt-modal-btn primary" id="detail-save">Save</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 function _attachBoardListeners() {
   // Filter checkboxes
   document.querySelectorAll('[data-filter-priority]').forEach(cb => {
@@ -521,17 +444,6 @@ function _attachBoardListeners() {
     });
   });
 
-  const closeBtn = document.getElementById('detail-close');
-  if (closeBtn) closeBtn.addEventListener('click', _closeDetail);
-  const cancelBtn = document.getElementById('detail-cancel');
-  if (cancelBtn) cancelBtn.addEventListener('click', _closeDetail);
-  const backdrop = document.getElementById('detail-backdrop');
-  if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) _closeDetail(); });
-  const saveBtn = document.getElementById('detail-save');
-  if (saveBtn) saveBtn.addEventListener('click', _saveDetail);
-  const deleteBtn = document.getElementById('detail-delete');
-  if (deleteBtn) deleteBtn.addEventListener('click', _deleteDetail);
-
   _attachDragListeners();
 }
 
@@ -593,84 +505,14 @@ async function _onDrop(e) {
   }
 }
 
-async function _openDetail(taskId) {
+function _openDetail(taskId) {
   const task = _tasks.find(t => t.id === taskId);
   if (!task) return;
-  _detail = { ...task, _deps: null };
-  _drawBoard();
-
-  try {
-    const deps = await api.get(`/tasks/${taskId}/deps`);
-    if (!_detail || _detail.id !== taskId) return;
-    const container = document.getElementById('detail-deps-container');
-    if (container) {
-      if (deps.length > 0) {
-        const depRows = deps.map(d => {
-          const depTask = _tasks.find(t => t.id === d.to_task_id);
-          const label = depTask
-            ? `${_prefix}-${depTask.seq}: ${escHtml(depTask.title.length > 40 ? depTask.title.slice(0, 39) + '…' : depTask.title)}`
-            : escHtml(d.to_task_id.slice(-8));
-          return `<li class="stat-row"><span class="stat-label">${escHtml(d.dep_type || 'blocks')}</span><span class="stat-value">${label}</span></li>`;
-        }).join('');
-        container.innerHTML = `<ul style="list-style:none;padding:0">${depRows}</ul>`;
-      } else {
-        container.innerHTML = '<p class="text-muted">No dependencies.</p>';
-      }
-    }
-  } catch (_) {}
-}
-
-function _closeDetail() {
-  _detail = null;
-  _drawBoard();
-}
-
-async function _saveDetail() {
-  if (!_detail) return;
-  const payload = {};
-  const title = document.getElementById('detail-title')?.value.trim();
-  const description = document.getElementById('detail-description')?.value;
-  const type = document.getElementById('detail-type')?.value;
-  const priority = document.getElementById('detail-priority')?.value;
-  const status = document.getElementById('detail-status')?.value;
-  const estimateSize = document.getElementById('detail-estimate-size')?.value;
-  const hours = parseFloat(document.getElementById('detail-hours')?.value) || 0;
-  const due = document.getElementById('detail-due')?.value || '';
-  const parentId = document.getElementById('detail-parent')?.value || '';
-
-  if (title && title !== _detail.title) payload.title = title;
-  if (description !== (_detail.description || '')) payload.description = description;
-  if (type !== (_detail.type || 'task')) payload.type = type;
-  if (priority !== _detail.priority) payload.priority = priority;
-  if (status !== _detail.status) payload.status = status;
-  if (estimateSize !== (_detail.estimate_size || '')) payload.estimate_size = estimateSize;
-  if (hours !== (_detail.estimate_hours || 0)) payload.estimate_hours = hours;
-  if (due !== (_detail.due_date || '')) payload.due_date = due;
-  if (parentId !== (_detail.parent_id || '')) payload.parent_id = parentId;
-
-  if (Object.keys(payload).length === 0) { _closeDetail(); return; }
-
-  try {
-    await api.patch(`/tasks/${_detail.id}`, payload);
-    const task = _tasks.find(t => t.id === _detail.id);
-    if (task) Object.assign(task, payload);
-    _closeDetail();
-  } catch (err) {
-    alert('Save failed: ' + (err.message || err));
-  }
-}
-
-async function _deleteDetail() {
-  if (!_detail) return;
-  const displayId = `${_prefix}-${_detail.seq}`;
-  if (!confirm(`Delete ${displayId}?`)) return;
-  try {
-    await api.del(`/tasks/${_detail.id}`);
-    _tasks = _tasks.filter(t => t.id !== _detail.id);
-    _closeDetail();
-  } catch (err) {
-    alert('Delete failed: ' + (err.message || err));
-  }
+  const refresh = async () => {
+    _tasks = await api.get(`/projects/${_prefix}/tasks`);
+    _drawBoard();
+  };
+  openTaskModal(task, { prefix: _prefix, allTasks: _tasks, onSaved: refresh, onDeleted: refresh });
 }
 
 function _applyFilters(tasks) {

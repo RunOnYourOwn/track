@@ -89,7 +89,7 @@ code, .mono {
 }
 .nav-links a:hover { color: var(--text); background: var(--surface2); text-decoration: none; }
 .nav-links a.active { color: var(--text); background: var(--surface2); }
-.nav-links-back { font-size: 13px; color: var(--muted); text-decoration: none; margin-right: auto; }
+.nav-links-back { font-size: 13px; color: var(--muted); text-decoration: none; margin-right: 8px; }
 .nav-links-back:hover { color: var(--text); }
 
 .nav-prefix {
@@ -120,7 +120,8 @@ code, .mono {
 
 #app:has(.kanban-board),
 #app:has(.timeline-wrapper),
-#app:has(.page-graph) {
+#app:has(.page-graph),
+#app:has(.tt-container) {
   max-width: 100%;
   padding: 20px 24px;
 }
@@ -1707,7 +1708,8 @@ code, .mono {
   #app { margin-top: 36px; padding: 10px 8px; }
   #app:has(.kanban-board),
   #app:has(.timeline-wrapper),
-  #app:has(.page-graph) { padding: 10px 6px; }
+  #app:has(.page-graph),
+  #app:has(.tt-container) { padding: 10px 6px; }
 
   /* --- Dashboard --- */
   .page-header { flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 10px; }
@@ -2151,7 +2153,7 @@ code, .mono {
 .tt-col-title { width: auto; }
 .tt-col-type { width: 80px; }
 .tt-col-priority { width: 96px; }
-.tt-col-status { width: 96px; }
+.tt-col-status { width: 120px; }
 .tt-col-est { width: 64px; }
 .tt-col-due { width: 88px; }
 .tt-col-actions { width: 40px; }
@@ -2244,9 +2246,9 @@ code, .mono {
 .tt-action-btn:hover { color: var(--text); background: var(--surface2); }
 
 .tt-actions-menu {
-  position: absolute;
-  right: 0;
-  top: 100%;
+  /* fixed (positioned via JS at the button) so the table cell's overflow:hidden
+     and the container's overflow don't clip the dropdown. */
+  position: fixed;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);

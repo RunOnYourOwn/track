@@ -1,5 +1,5 @@
 // focus.js — Compact "Current Work" view for narrow split-tab usage
-// Depends on globals: api, render, escHtml, priorityBadge
+// Depends on globals: api, render, escHtml, priorityBadge, openTaskModal
 // Exposes: renderFocus(prefix)
 
 var renderFocus = (function() {
@@ -102,7 +102,7 @@ function _draw() {
     html += '<div class="focus-section focus-section-muted">';
     html += '<div class="focus-section-label">Done recently</div>';
     recentDone.forEach(t => {
-      html += `<div class="focus-done-item">
+      html += `<div class="focus-done-item" data-task-id="${t.id}" role="button" tabindex="0">
         <span class="focus-done-check">✓</span>
         <span class="focus-done-id">${_prefix}-${t.seq}</span>
         <span class="focus-done-title">${escHtml(_trunc(t.title, 30))}</span>
@@ -122,7 +122,7 @@ function _renderActiveCard(task) {
   const elapsed = _elapsed(task.updated_at);
   const estimate = task.estimate_hours > 0 ? `<span class="focus-estimate">${task.estimate_hours}h est</span>` : '';
   const desc = task.description ? `<div class="focus-active-desc">${escHtml(_trunc(task.description, 60))}</div>` : '';
-  return `<div class="focus-active-card">
+  return `<div class="focus-active-card" data-task-id="${task.id}" role="button" tabindex="0">
     <div class="focus-active-header">
       <span class="focus-active-id">${displayId}</span>
       ${estimate}
@@ -143,7 +143,7 @@ function _renderActiveCard(task) {
 
 function _renderQueueCard(task) {
   const displayId = `${_prefix}-${task.seq}`;
-  return `<div class="focus-queue-card">
+  return `<div class="focus-queue-card" data-task-id="${task.id}" role="button" tabindex="0">
     <div class="focus-queue-left">
       <span class="focus-queue-id">${displayId}</span>
       <span class="focus-queue-title">${escHtml(_trunc(task.title, 36))}</span>
@@ -154,7 +154,8 @@ function _renderQueueCard(task) {
 
 function _attachListeners() {
   document.querySelectorAll('[data-action="done"]').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't open the card modal
       const id = btn.dataset.taskId;
       btn.disabled = true;
       btn.textContent = '…';
@@ -162,7 +163,7 @@ function _attachListeners() {
         await api.patch(`/tasks/${id}`, { status: 'done' });
         _tasks = await api.get(`/projects/${_prefix}/tasks`);
         _draw();
-      } catch (e) {
+      } catch (err) {
         btn.disabled = false;
         btn.textContent = '✓ Done';
       }
@@ -170,18 +171,37 @@ function _attachListeners() {
   });
 
   document.querySelectorAll('[data-action="start"]').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // don't open the card modal
       const id = btn.dataset.taskId;
       btn.disabled = true;
       try {
         await api.patch(`/tasks/${id}`, { status: 'in_progress' });
         _tasks = await api.get(`/projects/${_prefix}/tasks`);
         _draw();
-      } catch (e) {
+      } catch (err) {
         btn.disabled = false;
       }
     });
   });
+
+  // Clicking a task card/item opens the shared editable detail modal.
+  document.querySelectorAll('[data-task-id][role="button"]').forEach(card => {
+    card.addEventListener('click', () => _openModal(card.dataset.taskId));
+    card.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _openModal(card.dataset.taskId); }
+    });
+  });
+}
+
+function _openModal(taskId) {
+  const task = _tasks.find(t => t.id === taskId);
+  if (!task) return;
+  const refresh = async () => {
+    _tasks = await api.get(`/projects/${_prefix}/tasks`);
+    _draw();
+  };
+  openTaskModal(task, { prefix: _prefix, allTasks: _tasks, onSaved: refresh, onDeleted: refresh });
 }
 
 function _startTaskTimer(inProgress) {

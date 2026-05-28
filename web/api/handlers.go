@@ -411,7 +411,8 @@ type updateTaskRequest struct {
 	ParentID    *string `json:"parent_id"`
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
-	// Pointer so an explicit "" can clear the due date (omitted = leave unchanged).
+	// Pointers so an explicit "" can clear the date (omitted = leave unchanged).
+	StartDate        *string `json:"start_date"`
 	DueDate          *string `json:"due_date"`
 	Description      string  `json:"description"`
 	Type             string  `json:"type"`
@@ -470,6 +471,13 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 
 	if req.Priority != "" {
 		if err := db.UpdateTaskField(h.conn, id, "priority", req.Priority); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.StartDate != nil {
+		if err := db.UpdateTaskField(h.conn, id, "start_date", *req.StartDate); err != nil {
 			writeServerError(w, err)
 			return
 		}

@@ -408,6 +408,8 @@ function _renderTimeline() {
         .attr('dominant-baseline', 'middle')
         .attr('fill', (row.indent || 0) > 0 ? '#999' : '#ccc')
         .attr('font-size', (row.indent || 0) > 0 ? (isNarrow ? '9px' : '11px') : (isNarrow ? '10px' : '12px'))
+        .style('cursor', 'pointer')
+        .on('click', () => _openModal(row.task))
         .text(_truncLabel(row.task.title, availChars));
     }
   });
@@ -417,8 +419,8 @@ function _renderTimeline() {
 
   function _getDescendantRange(parentId, depth) {
     const directChildren = _tasks.filter(c => c.parent_id === parentId);
-    let allStarts = directChildren.map(c => new Date(c.created_at));
-    let allEnds = directChildren.map(c => c.due_date ? new Date(c.due_date) : _addDays(new Date(c.created_at), 5));
+    let allStarts = directChildren.map(c => new Date(c.start_date || c.created_at));
+    let allEnds = directChildren.map(c => c.due_date ? new Date(c.due_date) : _addDays(new Date(c.start_date || c.created_at), 5));
     if (depth < 3) {
       directChildren.forEach(c => {
         const sub = _getDescendantRange(c.id, depth + 1);
@@ -441,7 +443,7 @@ function _renderTimeline() {
       start = range ? range.start : new Date(t.created_at);
       end = range ? range.end : _addDays(start, 7);
     } else {
-      start = new Date(t.created_at);
+      start = new Date(t.start_date || t.created_at);
       if (t.due_date) {
         end = new Date(t.due_date);
         if (end <= start) end = _addDays(start, 1);
@@ -493,7 +495,17 @@ function _renderTimeline() {
       .attr('fill', 'transparent')
       .attr('cursor', 'pointer')
       .on('mouseenter', function(event) { _showTooltip(event, t, start, end); })
-      .on('mouseleave', _hideTooltip);
+      .on('mouseleave', _hideTooltip)
+      .on('click', () => _openModal(t));
+  });
+}
+
+function _openModal(task) {
+  openTaskModal(task, {
+    prefix: _prefix,
+    allTasks: _tasks,
+    onSaved: () => renderTimeline(_prefix),
+    onDeleted: () => renderTimeline(_prefix),
   });
 }
 

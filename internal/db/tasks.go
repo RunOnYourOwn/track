@@ -34,6 +34,7 @@ type CreateTaskOpts struct {
 	SourceType           string
 	AgentContext         string
 	Tags                 string
+	StartDate            string
 	DueDate              string
 }
 
@@ -69,6 +70,10 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 	if opts.ParentID != "" {
 		parentID = &opts.ParentID
 	}
+	var startDate *string
+	if opts.StartDate != "" {
+		startDate = &opts.StartDate
+	}
 	var dueDate *string
 	if opts.DueDate != "" {
 		dueDate = &opts.DueDate
@@ -98,9 +103,9 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 			seq = int(max.Int64) + 1
 		}
 
-		_, err = tx.Exec(`INSERT INTO tasks (id, project_id, seq, title, description, status, priority, type, estimate_size, estimate_hours, estimate_agent_minutes, parent_id, sort_order, source_type, agent_context, tags, due_date, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
-			id, opts.ProjectID, seq, opts.Title, opts.Description, priority, taskType, opts.EstimateSize, opts.EstimateHours, opts.EstimateAgentMinutes, parentID, source, agentCtx, tags, dueDate, now, now)
+		_, err = tx.Exec(`INSERT INTO tasks (id, project_id, seq, title, description, status, priority, type, estimate_size, estimate_hours, estimate_agent_minutes, parent_id, sort_order, source_type, agent_context, tags, start_date, due_date, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+			id, opts.ProjectID, seq, opts.Title, opts.Description, priority, taskType, opts.EstimateSize, opts.EstimateHours, opts.EstimateAgentMinutes, parentID, source, agentCtx, tags, startDate, dueDate, now, now)
 		if err != nil {
 			tx.Rollback()
 			if isSeqConflict(err) {
@@ -435,7 +440,7 @@ func SetParentID(d *sql.DB, id, parentID string) error {
 
 var allowedTaskFields = map[string]bool{
 	"title": true, "description": true, "type": true, "priority": true,
-	"agent_context": true, "due_date": true, "sort_order": true,
+	"agent_context": true, "due_date": true, "start_date": true, "sort_order": true,
 	"estimate_size": true, "estimate_hours": true, "estimate_agent_minutes": true,
 	"actual_hours": true, "tags": true,
 }
@@ -567,17 +572,17 @@ func SuggestNext(db *sql.DB, projectID string) (*models.Task, error) {
 	return GetTask(db, id)
 }
 
-const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework FROM tasks t JOIN projects p ON t.project_id = p.id`
+const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.start_date, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework FROM tasks t JOIN projects p ON t.project_id = p.id`
 
 func scanTask(row *sql.Row) (*models.Task, error) {
 	var t models.Task
-	var parentID, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
 	if err != nil {
 		return nil, err
 	}
@@ -592,6 +597,9 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 	t.Tags = tags.String
 	if parentID.Valid {
 		t.ParentID = &parentID.String
+	}
+	if startDate.Valid {
+		t.StartDate = &startDate.String
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String
@@ -608,13 +616,13 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 
 func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	var t models.Task
-	var parentID, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
 	if err != nil {
 		return nil, err
 	}
@@ -629,6 +637,9 @@ func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	t.Tags = tags.String
 	if parentID.Valid {
 		t.ParentID = &parentID.String
+	}
+	if startDate.Valid {
+		t.StartDate = &startDate.String
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String

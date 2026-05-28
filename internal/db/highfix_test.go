@@ -139,16 +139,18 @@ func TestDeleteProjectCascades(t *testing.T) {
 // M11: versioned migrations apply once, record version, and are idempotent.
 func TestRunMigrationsAppliesOnceAndIsIdempotent(t *testing.T) {
 	d := OpenTestDB(t)
+	// Use a version above any real migration so this test exercises the runner
+	// regardless of how many real migrations OpenTestDB has already applied.
 	migs := []migration{
-		{version: 1, name: "add probe col", stmts: []string{`ALTER TABLE projects ADD COLUMN probe TEXT DEFAULT ''`}},
+		{version: 9001, name: "add probe col", stmts: []string{`ALTER TABLE projects ADD COLUMN probe TEXT DEFAULT ''`}},
 	}
 	if err := runMigrations(d, migs); err != nil {
 		t.Fatal(err)
 	}
 	var v int
 	d.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&v)
-	if v != 1 {
-		t.Fatalf("expected version 1 recorded, got %d", v)
+	if v != 9001 {
+		t.Fatalf("expected version 9001 recorded, got %d", v)
 	}
 	// Re-running must be a no-op (not re-apply the ALTER, which would error).
 	if err := runMigrations(d, migs); err != nil {
@@ -159,12 +161,12 @@ func TestRunMigrationsAppliesOnceAndIsIdempotent(t *testing.T) {
 // M11: a failing migration surfaces the error and is not recorded.
 func TestRunMigrationsSurfacesErrors(t *testing.T) {
 	d := OpenTestDB(t)
-	migs := []migration{{version: 1, name: "bad", stmts: []string{`THIS IS NOT SQL`}}}
+	migs := []migration{{version: 9002, name: "bad", stmts: []string{`THIS IS NOT SQL`}}}
 	if err := runMigrations(d, migs); err == nil {
 		t.Fatal("expected migration error to surface, got nil")
 	}
 	var n int
-	d.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n)
+	d.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 9002`).Scan(&n)
 	if n != 0 {
 		t.Fatalf("failed migration must not be recorded, got %d rows", n)
 	}

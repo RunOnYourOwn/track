@@ -39,6 +39,11 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 - New commands: add file in `cmd/`, register in `cmd/root.go`
 - Tests: table-driven, use real SQLite (in-memory `:memory:`)
 - Web static files: edit in `web/static/`, recompile to pick up changes
+- Skills stay in sync with the code: whenever you change CLI commands, flags, MCP
+  tools, or workflow behavior, check every skill that references them and update
+  it — in BOTH the repo's `skills/` (the source) and the deployed copies under
+  `~/.claude/skills/`. Do this before committing/pushing the change, so the skills
+  never drift from the behavior they invoke.
 
 ## Task Hierarchy (what track manages)
 - Epic: release milestone (--type epic) — POC, MVP1, Production
