@@ -58,6 +58,7 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	// Dashboard + insights
 	mux.HandleFunc("GET /api/dashboard", cors(h.dashboard))
 	mux.HandleFunc("GET /api/insights", cors(h.insights))
+	mux.HandleFunc("GET /api/projects/{prefix}/graph", cors(h.projectGraph))
 
 	// Handle OPTIONS preflight for all /api/ paths.
 	mux.HandleFunc("OPTIONS /api/", func(w http.ResponseWriter, r *http.Request) {
@@ -846,6 +847,31 @@ func (h *handler) insights(w http.ResponseWriter, r *http.Request) {
 		data = []db.ProjectInsights{}
 	}
 	writeJSON(w, http.StatusOK, data)
+}
+
+func (h *handler) projectGraph(w http.ResponseWriter, r *http.Request) {
+	p, err := db.GetProjectByPrefix(h.conn, r.PathValue("prefix"))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	includeDone := r.URL.Query().Get("include_done") == "true"
+	g, err := db.ComputeGraph(h.conn, p.ID, includeDone)
+	if err != nil {
+		writeServerError(w, err)
+		return
+	}
+	if g.Nodes == nil {
+		g.Nodes = []db.GraphNode{}
+	}
+	if g.Edges == nil {
+		g.Edges = []db.GraphEdge{}
+	}
+	writeJSON(w, http.StatusOK, g)
 }
 
 // --- sprint handlers ---
