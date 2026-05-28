@@ -1,5 +1,6 @@
-// insights.js — analytics / insights dashboard
-// Requires: api global, render global
+// insights.js — analytics dashboard. All metrics are computed server-side
+// (GET /api/insights?days=N); this view only renders the returned data.
+// Requires: api, render, escHtml globals.
 
 let _insightsRange = 30; // days
 
@@ -15,7 +16,7 @@ async function renderInsights() {
         <select id="insights-range" class="form-select" style="min-width:100px">
           <option value="7">Last 7 days</option>
           <option value="14">Last 14 days</option>
-          <option value="30" selected>Last 30 days</option>
+          <option value="30">Last 30 days</option>
           <option value="0">All time</option>
         </select>
       </div>
@@ -23,74 +24,58 @@ async function renderInsights() {
     </div>
   `);
 
-  let projects;
-  try {
-    projects = await api.get('/projects');
-  } catch (e) {
-    document.getElementById('insights-loading').outerHTML =
-      `<div class="empty-state">Failed to load projects: ${escHtml((e).message)}</div>`;
-    return;
-  }
-
-  if (!projects || projects.length === 0) {
-    document.getElementById('insights-loading').outerHTML =
-      `<div class="empty-state">No projects found.</div>`;
-    return;
-  }
-
-  const taskResults = await Promise.allSettled(
-    projects.map(p => api.get(`/projects/${p.prefix}/tasks`))
-  );
-
-  const allProjectData = projects.map((p, i) => ({
-    ...p,
-    tasks: taskResults[i].status === 'fulfilled' ? (taskResults[i].value || []) : [],
-  }));
-
-  document.getElementById('insights-loading').remove();
-
-  function drawInsights() {
-    const cutoff = _insightsRange > 0
-      ? new Date(Date.now() - _insightsRange * 86400000).toISOString()
-      : null;
-
-    const projectData = allProjectData.map(p => ({
-      ...p,
-      tasks: cutoff
-        ? p.tasks.filter(t => (t.completed_at || t.updated_at || t.created_at) >= cutoff)
-        : p.tasks,
-    }));
-
-    const grid = document.getElementById('insights-grid');
-    if (grid) grid.remove();
-
-    document.querySelector('.page-insights').insertAdjacentHTML('beforeend', `
-      <div class="insights-grid" id="insights-grid">
-        ${buildThroughputCard(projectData)}
-        ${buildCycleTimeCard(projectData)}
-        ${buildAccuracyCard(projectData)}
-        ${buildDistributionCard(allProjectData)}
-        ${buildWIPCard(allProjectData)}
-      </div>
-    `);
-  }
-
-  drawInsights();
-
-  document.getElementById('insights-range').addEventListener('change', e => {
+  const sel = document.getElementById('insights-range');
+  sel.value = String(_insightsRange);
+  sel.addEventListener('change', e => {
     _insightsRange = parseInt(e.target.value, 10);
     drawInsights();
   });
+
+  drawInsights();
+}
+
+async function drawInsights() {
+  let data;
+  try {
+    data = await api.get(`/insights?days=${_insightsRange}`);
+  } catch (e) {
+    _replaceGrid(`<div class="empty-state">Failed to load insights: ${escHtml((e).message)}</div>`);
+    return;
+  }
+  data = data || [];
+
+  if (data.length === 0) {
+    _replaceGrid(`<div class="empty-state">No projects found.</div>`);
+    return;
+  }
+
+  _replaceGrid(
+    buildThroughputCard(data) +
+    buildCycleTimeCard(data) +
+    buildAccuracyCard(data) +
+    buildDistributionCard(data) +
+    buildWIPCard(data)
+  );
+}
+
+// Swap the grid contents in place; the loading row is removed on first draw.
+function _replaceGrid(innerHtml) {
+  const ld = document.getElementById('insights-loading');
+  if (ld) ld.remove();
+  let grid = document.getElementById('insights-grid');
+  if (!grid) {
+    const page = document.querySelector('.page-insights');
+    if (!page) return;
+    page.insertAdjacentHTML('beforeend', '<div class="insights-grid" id="insights-grid"></div>');
+    grid = document.getElementById('insights-grid');
+  }
+  grid.innerHTML = innerHtml;
 }
 
 // ── Card 1: Throughput ───────────────────────────────────────────────────────
 
-function buildThroughputCard(projectData) {
-  const rows = projectData.map(p => {
-    const done = p.tasks.filter(t => t.status === 'done').length;
-    return { prefix: p.prefix, name: p.name, done, total: p.tasks.length };
-  });
-
+function buildThroughputCard(data) {
+  const rows = data.map(p => ({ prefix: p.prefix, name: p.name, done: p.throughput.done, total: p.throughput.total }));
   const maxDone = Math.max(...rows.map(r => r.done), 1);
 
   const bars = rows.map(r => `
@@ -100,9 +85,7 @@ function buildThroughputCard(projectData) {
         <span style="color:#8b949e;font-size:12px;margin-left:6px">${escHtml(r.name)}</span>
       </div>
       <div class="bar-track">
-        <div class="bar-fill"
-             style="width:${pct(r.done, maxDone)}%;background:#3fb950"
-             title="${r.done} done"></div>
+        <div class="bar-fill" style="width:${pct(r.done, maxDone)}%;background:#3fb950" title="${r.done} done"></div>
       </div>
       <div class="chart-value" style="color:#3fb950">${r.done}</div>
     </div>
@@ -113,38 +96,13 @@ function buildThroughputCard(projectData) {
 
 // ── Card 2: Cycle Time ──────────────────────────────────────────────────────
 
-function buildCycleTimeCard(projectData) {
-  const MIN_ACTIVE_HOURS = 1 / 60; // 1 minute minimum to count as real work
-
-  const rows = projectData.map(p => {
-    const completed = p.tasks.filter(t => t.status === 'done' && t.created_at && t.completed_at);
-    if (completed.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
-
-    // Best: actual_hours from status history (real active time, min 1 min)
-    const withActual = completed.filter(t => t.actual_hours >= MIN_ACTIVE_HOURS);
-    if (withActual.length > 0) {
-      const avg = withActual.reduce((s, t) => s + t.actual_hours, 0) / withActual.length;
-      return { prefix: p.prefix, name: p.name, avg, count: withActual.length, source: 'active' };
-    }
-
-    // Fallback: lead time — only meaningful if tasks were created individually over time
-    // If top-2 creation hours account for >50% of tasks, it's batch-created (lead time is meaningless)
-    const createHours = completed.map(t => t.created_at.slice(0, 13)); // YYYY-MM-DDTHH
-    const hourCounts = createHours.reduce((acc, h) => { acc[h] = (acc[h] || 0) + 1; return acc; }, {});
-    const sorted = Object.values(hourCounts).sort((a, b) => b - a);
-    const topTwo = (sorted[0] || 0) + (sorted[1] || 0);
-    if (topTwo / completed.length > 0.5) {
-      return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
-    }
-
-    const cycleTimes = completed
-      .map(t => (new Date(t.completed_at) - new Date(t.created_at)) / 3600000)
-      .filter(h => h > 5 / 60);
-
-    if (cycleTimes.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
-    const avg = cycleTimes.reduce((a, b) => a + b, 0) / cycleTimes.length;
-    return { prefix: p.prefix, name: p.name, avg, count: cycleTimes.length, source: 'lead' };
-  });
+function buildCycleTimeCard(data) {
+  const rows = data.map(p => ({
+    prefix: p.prefix,
+    avg: p.cycle_time.source ? p.cycle_time.avg_hours : null,
+    count: p.cycle_time.count,
+    source: p.cycle_time.source,
+  }));
 
   const maxAvg = Math.max(...rows.filter(r => r.avg !== null).map(r => r.avg), 1);
 
@@ -179,21 +137,12 @@ function buildCycleTimeCard(projectData) {
 
 // ── Card 3: Estimation Accuracy ──────────────────────────────────────────────
 
-function buildAccuracyCard(projectData) {
-  const rows = projectData.map(p => {
-    const eligible = p.tasks.filter(
-      t => t.estimate_hours > 0 && t.actual_hours > 0
-    );
-    const avg = eligible.length === 0
-      ? null
-      : eligible.reduce((sum, t) => {
-          const acc = Math.min(t.estimate_hours, t.actual_hours) /
-                      Math.max(t.estimate_hours, t.actual_hours) * 100;
-          return sum + acc;
-        }, 0) / eligible.length;
-
-    return { prefix: p.prefix, name: p.name, avg, count: eligible.length };
-  });
+function buildAccuracyCard(data) {
+  const rows = data.map(p => ({
+    prefix: p.prefix,
+    avg: p.accuracy.count > 0 ? p.accuracy.avg_pct : null,
+    count: p.accuracy.count,
+  }));
 
   const bars = rows.map(r => {
     if (r.avg === null) {
@@ -227,11 +176,12 @@ function buildAccuracyCard(projectData) {
   );
 }
 
-// ── Card 3: Status Distribution ──────────────────────────────────────────────
+// ── Card 4: Status Distribution ──────────────────────────────────────────────
 
-function buildDistributionCard(projectData) {
-  const bars = projectData.map(p => {
-    const total = p.tasks.length;
+function buildDistributionCard(data) {
+  const bars = data.map(p => {
+    const c = p.distribution;
+    const total = c.done + c.in_progress + c.todo + c.blocked;
     if (total === 0) {
       return `
         <div class="chart-row">
@@ -241,30 +191,23 @@ function buildDistributionCard(projectData) {
           </div>
         </div>`;
     }
-    const counts = { todo: 0, in_progress: 0, done: 0, blocked: 0 };
-    p.tasks.forEach(t => {
-      if (t.status === 'done') counts.done++;
-      else if (t.status === 'in_progress') counts.in_progress++;
-      else if (t.status === 'blocked' || t.status.startsWith('waiting')) counts.blocked++;
-      else counts.todo++;
-    });
     const segments = [
-      { key: 'done',        color: '#3fb950', label: 'Done' },
-      { key: 'in_progress', color: '#58a6ff', label: 'In Progress' },
-      { key: 'todo',        color: '#484f58', label: 'Todo' },
-      { key: 'blocked',     color: '#f85149', label: 'Blocked' },
+      { val: c.done,        color: '#3fb950', label: 'Done' },
+      { val: c.in_progress, color: '#58a6ff', label: 'In Progress' },
+      { val: c.todo,        color: '#484f58', label: 'Todo' },
+      { val: c.blocked,     color: '#f85149', label: 'Blocked' },
     ];
     const segs = segments
-      .filter(s => counts[s.key] > 0)
+      .filter(s => s.val > 0)
       .map(s => `
         <div class="stacked-seg"
-             style="width:${pct(counts[s.key], total)}%;background:${s.color}"
-             title="${s.label}: ${counts[s.key]}"></div>
+             style="width:${pct(s.val, total)}%;background:${s.color}"
+             title="${s.label}: ${s.val}"></div>
       `).join('');
 
     const legend = segments
-      .filter(s => counts[s.key] > 0)
-      .map(s => `<span style="color:${s.color}">${counts[s.key]} ${s.label}</span>`)
+      .filter(s => s.val > 0)
+      .map(s => `<span style="color:${s.color}">${s.val} ${s.label}</span>`)
       .join(' · ');
 
     return `
@@ -280,12 +223,12 @@ function buildDistributionCard(projectData) {
   return chartCard('Status Distribution', 'Task breakdown by status per project', bars || emptyRow());
 }
 
-// ── Card 4: WIP Check ────────────────────────────────────────────────────────
+// ── Card 5: WIP Check ────────────────────────────────────────────────────────
 
-function buildWIPCard(projectData) {
-  const rows = projectData.map(p => {
-    const inProgress = p.tasks.filter(t => t.status === 'in_progress').length;
-    const limit = p.wip_limit || 0;
+function buildWIPCard(data) {
+  const rows = data.map(p => {
+    const inProgress = p.wip.in_progress;
+    const limit = p.wip.limit || 0;
     let color, label;
     if (limit === 0) {
       color = '#8b949e'; label = 'No limit set';
@@ -296,7 +239,7 @@ function buildWIPCard(projectData) {
     } else {
       color = '#f85149'; label = `${inProgress}/${limit} — over limit!`;
     }
-    return { prefix: p.prefix, name: p.name, inProgress, limit, color, label };
+    return { prefix: p.prefix, inProgress, limit, color, label };
   });
 
   const items = rows.map(r => `
@@ -350,4 +293,3 @@ function pct(value, max) {
   if (max === 0) return 0;
   return Math.min(100, (value / max) * 100);
 }
-
