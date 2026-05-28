@@ -114,16 +114,36 @@ function buildThroughputCard(projectData) {
 // ── Card 2: Cycle Time ──────────────────────────────────────────────────────
 
 function buildCycleTimeCard(projectData) {
+  const MIN_ACTIVE_HOURS = 1 / 60; // 1 minute minimum to count as real work
+
   const rows = projectData.map(p => {
     const completed = p.tasks.filter(t => t.status === 'done' && t.created_at && t.completed_at);
-    if (completed.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0 };
+    if (completed.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
 
-    const cycleTimes = completed.map(t => {
-      const ms = new Date(t.completed_at) - new Date(t.created_at);
-      return ms / 3600000; // hours
-    });
+    // Best: actual_hours from status history (real active time, min 1 min)
+    const withActual = completed.filter(t => t.actual_hours >= MIN_ACTIVE_HOURS);
+    if (withActual.length > 0) {
+      const avg = withActual.reduce((s, t) => s + t.actual_hours, 0) / withActual.length;
+      return { prefix: p.prefix, name: p.name, avg, count: withActual.length, source: 'active' };
+    }
+
+    // Fallback: lead time — only meaningful if tasks were created individually over time
+    // If top-2 creation hours account for >50% of tasks, it's batch-created (lead time is meaningless)
+    const createHours = completed.map(t => t.created_at.slice(0, 13)); // YYYY-MM-DDTHH
+    const hourCounts = createHours.reduce((acc, h) => { acc[h] = (acc[h] || 0) + 1; return acc; }, {});
+    const sorted = Object.values(hourCounts).sort((a, b) => b - a);
+    const topTwo = (sorted[0] || 0) + (sorted[1] || 0);
+    if (topTwo / completed.length > 0.5) {
+      return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
+    }
+
+    const cycleTimes = completed
+      .map(t => (new Date(t.completed_at) - new Date(t.created_at)) / 3600000)
+      .filter(h => h > 5 / 60);
+
+    if (cycleTimes.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0, source: null };
     const avg = cycleTimes.reduce((a, b) => a + b, 0) / cycleTimes.length;
-    return { prefix: p.prefix, name: p.name, avg, count: completed.length };
+    return { prefix: p.prefix, name: p.name, avg, count: cycleTimes.length, source: 'lead' };
   });
 
   const maxAvg = Math.max(...rows.filter(r => r.avg !== null).map(r => r.avg), 1);
@@ -134,17 +154,18 @@ function buildCycleTimeCard(projectData) {
         <div class="chart-row">
           <div class="chart-label">
             <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
-            <span class="chart-empty-msg">No completed tasks</span>
+            <span class="chart-empty-msg">No cycle data</span>
           </div>
         </div>`;
     }
     const color = r.avg <= 4 ? '#3fb950' : r.avg <= 12 ? '#58a6ff' : r.avg <= 48 ? '#d29922' : '#f85149';
     const display = r.avg < 1 ? `${Math.round(r.avg * 60)}m` : r.avg < 24 ? `${r.avg.toFixed(1)}h` : `${(r.avg / 24).toFixed(1)}d`;
+    const sourceLabel = r.source === 'lead' ? 'lead time' : 'active';
     return `
       <div class="chart-row">
         <div class="chart-label">
           <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
-          <span style="color:#8b949e;font-size:11px;margin-left:6px">(${r.count} tasks)</span>
+          <span style="color:#8b949e;font-size:11px;margin-left:6px">(${r.count} · ${sourceLabel})</span>
         </div>
         <div class="bar-track">
           <div class="bar-fill" style="width:${pct(r.avg, maxAvg)}%;background:${color}"></div>
@@ -153,7 +174,7 @@ function buildCycleTimeCard(projectData) {
       </div>`;
   }).join('');
 
-  return chartCard('Cycle Time', 'Avg time from created to done (shorter = better)', bars || emptyRow());
+  return chartCard('Cycle Time', 'Avg active time per task (excludes bulk imports)', bars || emptyRow());
 }
 
 // ── Card 3: Estimation Accuracy ──────────────────────────────────────────────
@@ -280,16 +301,13 @@ function buildWIPCard(projectData) {
 
   const items = rows.map(r => `
     <div class="chart-row">
-      <div class="chart-label">
+      <div class="chart-label" style="min-width:0;flex:0 0 auto">
         <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
-        <span style="color:#8b949e;font-size:12px;margin-left:6px">${escHtml(r.name)}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
-        <div class="wip-dots">
-          ${buildWIPDots(r.inProgress, r.limit, r.color)}
-        </div>
-        <span style="font-size:12px;color:${r.color};white-space:nowrap">${r.label}</span>
+      <div class="wip-dots">
+        ${buildWIPDots(r.inProgress, r.limit, r.color)}
       </div>
+      <span style="font-size:11px;color:${r.color};white-space:nowrap">${r.label}</span>
     </div>
   `).join('');
 
@@ -306,7 +324,7 @@ function buildWIPDots(current, limit, color) {
     const filled = i < current;
     const overLimit = i >= limit;
     const dotColor = filled ? (overLimit ? '#f85149' : color) : '#30363d';
-    dots.push(`<span style="color:${dotColor};font-size:16px">●</span>`);
+    dots.push(`<span style="color:${dotColor};font-size:12px">●</span>`);
   }
   return dots.join('');
 }

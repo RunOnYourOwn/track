@@ -199,6 +199,10 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleTaskNext(conn, args)
 	case "track_task_link":
 		return handleTaskLink(conn, args)
+	case "track_task_delete":
+		return handleTaskDelete(conn, args)
+	case "track_task_update":
+		return handleTaskUpdate(conn, args)
 	case "track_session_start":
 		return handleSessionStart(conn, args)
 	case "track_session_end":
@@ -532,6 +536,83 @@ func handleTaskLink(conn *sql.DB, args map[string]any) (*ToolCallResult, error) 
 		return nil, err
 	}
 	return textResult(fmt.Sprintf("linked: %s blocks %s", fromStr, toStr)), nil
+}
+
+func handleTaskDelete(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	idStr := strArg(args, "id")
+	if idStr == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	taskID, err := resolveTaskID(conn, idStr)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.DeleteTask(conn, taskID); err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("deleted task %s", idStr)), nil
+}
+
+func handleTaskUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	idStr := strArg(args, "id")
+	if idStr == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	taskID, err := resolveTaskID(conn, idStr)
+	if err != nil {
+		return nil, err
+	}
+
+	fields := map[string]string{
+		"title":                  strArg(args, "title"),
+		"description":           strArg(args, "description"),
+		"type":                  strArg(args, "type"),
+		"priority":              strArg(args, "priority"),
+		"estimate_size":         strArg(args, "estimate_size"),
+		"due_date":              strArg(args, "due_date"),
+		"tags":                  strArg(args, "tags"),
+	}
+
+	if v := floatArg(args, "estimate_hours"); v > 0 {
+		fields["estimate_hours"] = strconv.FormatFloat(v, 'f', -1, 64)
+	}
+	if v := int(floatArg(args, "estimate_agent_minutes")); v > 0 {
+		fields["estimate_agent_minutes"] = strconv.Itoa(v)
+	}
+	if v := int(floatArg(args, "sort_order")); v > 0 {
+		fields["sort_order"] = strconv.Itoa(v)
+	}
+
+	updated := 0
+	for field, value := range fields {
+		if value == "" {
+			continue
+		}
+		if err := db.UpdateTaskField(conn, taskID, field, value); err != nil {
+			return nil, fmt.Errorf("updating %s: %w", field, err)
+		}
+		updated++
+	}
+
+	if parentStr := strArg(args, "parent_id"); parentStr != "" {
+		parentID := ""
+		if parentStr != "null" && parentStr != "" {
+			parentID, err = resolveTaskID(conn, parentStr)
+			if err != nil {
+				return nil, fmt.Errorf("parent_id: %w", err)
+			}
+		}
+		if err := db.SetParentID(conn, taskID, parentID); err != nil {
+			return nil, err
+		}
+		updated++
+	}
+
+	task, err := db.GetTask(conn, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(task), nil
 }
 
 func handleSessionStart(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -896,6 +977,39 @@ func allTools() []Tool {
 					"reason":  {Type: "string", Description: "Reason for the dependency"},
 				},
 				Required: []string{"from_id", "to_id"},
+			},
+		},
+		{
+			Name:        "track_task_delete",
+			Description: "Delete a task and all associated data (history, deps, time entries)",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id": {Type: "string", Description: "Task ID: PREFIX-NNN or ULID"},
+				},
+				Required: []string{"id"},
+			},
+		},
+		{
+			Name:        "track_task_update",
+			Description: "Update task fields (title, description, type, priority, estimates, due_date, tags, parent_id, sort_order)",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id":                     {Type: "string", Description: "Task ID: PREFIX-NNN or ULID (required)"},
+					"title":                  {Type: "string", Description: "New title"},
+					"description":            {Type: "string", Description: "New description"},
+					"type":                   {Type: "string", Description: "epic | feature | task"},
+					"priority":               {Type: "string", Description: "urgent | high | medium | low"},
+					"estimate_size":          {Type: "string", Description: "T-shirt size: XS | S | M | L | XL"},
+					"estimate_hours":         {Type: "number", Description: "Estimated hours"},
+					"estimate_agent_minutes": {Type: "number", Description: "Estimated agent minutes"},
+					"due_date":               {Type: "string", Description: "Due date YYYY-MM-DD"},
+					"tags":                   {Type: "string", Description: "Comma-separated tags"},
+					"parent_id":              {Type: "string", Description: "Parent task ID (PREFIX-NNN or ULID), or 'null' to unparent"},
+					"sort_order":             {Type: "number", Description: "Sort order within parent"},
+				},
+				Required: []string{"id"},
 			},
 		},
 		{
