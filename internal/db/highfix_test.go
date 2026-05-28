@@ -118,6 +118,35 @@ func TestCreateTaskRejectsInvalidFields(t *testing.T) {
 	}
 }
 
+// XSS hardening: project prefixes are interpolated unescaped into display IDs
+// and URLs, so the create path rejects unsafe prefixes and normalizes valid ones.
+func TestCreateProjectValidatesPrefix(t *testing.T) {
+	d := OpenTestDB(t)
+
+	bad := []string{
+		`<img src=x onerror=alert(1)>`,
+		`A B`,         // space
+		`A/B`,         // slash (breaks URL paths)
+		`-LEADHYPHEN`, // must start alphanumeric
+		"",
+		"WAYTOOLONGPREFIXVALUE", // > 16 chars
+	}
+	for _, p := range bad {
+		if _, err := CreateProject(d, p, "x", "", "", "", "", 3); err == nil {
+			t.Fatalf("expected prefix %q to be rejected", p)
+		}
+	}
+
+	// Valid prefixes are accepted and uppercased.
+	p, err := CreateProject(d, "web-1", "Web", "", "", "", "", 3)
+	if err != nil {
+		t.Fatalf("valid prefix rejected: %v", err)
+	}
+	if p.Prefix != "WEB-1" {
+		t.Fatalf("prefix not normalized to upper: got %q", p.Prefix)
+	}
+}
+
 // H5: deleting a non-empty project cascades instead of failing the FK check.
 func TestDeleteProjectCascades(t *testing.T) {
 	d := OpenTestDB(t)

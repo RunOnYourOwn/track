@@ -3,12 +3,36 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/RunOnYourOwn/track/internal/models"
 )
 
+// Prefixes appear unescaped in display IDs (PREFIX-123) across every web view and
+// in API URL paths, so they are constrained to a safe charset at the create
+// boundary rather than relied on to be escaped at every output site.
+var prefixRe = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]*$`)
+
+func normalizePrefix(prefix string) (string, error) {
+	p := strings.ToUpper(strings.TrimSpace(prefix))
+	if p == "" {
+		return "", fmt.Errorf("project prefix is required")
+	}
+	if len(p) > 16 {
+		return "", fmt.Errorf("project prefix too long (max 16 chars): %q", prefix)
+	}
+	if !prefixRe.MatchString(p) {
+		return "", fmt.Errorf("invalid project prefix %q: use letters, digits, '-' or '_' (must start alphanumeric)", prefix)
+	}
+	return p, nil
+}
+
 func CreateProject(db *sql.DB, prefix, name, phase, phaseType, externalID, metadata string, wipLimit int) (*models.Project, error) {
+	normPrefix, err := normalizePrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
 	id := NewID()
 	now := Now()
 	if phaseType == "" {
@@ -21,9 +45,9 @@ func CreateProject(db *sql.DB, prefix, name, phase, phaseType, externalID, metad
 		wipLimit = 3
 	}
 
-	_, err := db.Exec(`INSERT INTO projects (id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, created_at, updated_at)
+	_, err = db.Exec(`INSERT INTO projects (id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		id, strings.ToUpper(prefix), name, phase, phaseType, externalID, metadata, wipLimit, now, now)
+		id, normPrefix, name, phase, phaseType, externalID, metadata, wipLimit, now, now)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
 	}
