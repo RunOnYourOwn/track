@@ -42,11 +42,14 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 
 	// Step 2: get all task IDs for the project
 	type taskInfo struct {
-		id    string
-		seq   int
-		title string
+		id                   string
+		seq                  int
+		title                string
+		estimateHours        float64
+		estimateAgentMinutes int
+		actualHours          float64
 	}
-	rows, err := conn.Query(`SELECT id, seq, title FROM tasks WHERE project_id = ?`, projectID)
+	rows, err := conn.Query(`SELECT id, seq, title, COALESCE(estimate_hours, 0), COALESCE(estimate_agent_minutes, 0), COALESCE(actual_hours, 0) FROM tasks WHERE project_id = ?`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -57,7 +60,7 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 	taskMap := make(map[string]taskInfo)
 	for rows.Next() {
 		var ti taskInfo
-		if err := rows.Scan(&ti.id, &ti.seq, &ti.title); err != nil {
+		if err := rows.Scan(&ti.id, &ti.seq, &ti.title, &ti.estimateHours, &ti.estimateAgentMinutes, &ti.actualHours); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, ti)
@@ -207,11 +210,14 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 	for taskID := range touchedSet {
 		ti := taskMap[taskID]
 		ta := models.TaskActivity{
-			TaskID:    taskID,
-			Title:     ti.title,
-			Seq:       ti.seq,
-			Completed: completedSet[taskID],
-			Touched:   true,
+			TaskID:               taskID,
+			Title:                ti.title,
+			Seq:                  ti.seq,
+			Completed:            completedSet[taskID],
+			Touched:              true,
+			EstimateHours:        ti.estimateHours,
+			EstimateAgentMinutes: ti.estimateAgentMinutes,
+			ActualHours:          ti.actualHours,
 		}
 		if ct, ok := cycleTimeMap[taskID]; ok {
 			ta.CycleTimeSec = &ct

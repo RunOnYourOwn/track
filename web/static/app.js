@@ -206,27 +206,27 @@ function updateNav(hash) {
   if (!navLinks) return;
 
   // Check if we're inside a project view
-  const projMatch = hash.match(/^#\/project\/([^/]+)\/(board|timeline|tree|graph)$/);
+  const projMatch = hash.match(/^#\/project\/([^/]+)\/(focus|board|timeline|tree|graph)$/);
 
   if (projMatch) {
     const prefix = projMatch[1];
     const view = projMatch[2];
+    const ep = encodeURIComponent(prefix);
     navLinks.innerHTML = `
-      <a href="#/" class="nav-links-back">← Dashboard</a>
-      <span class="nav-separator">/</span>
-      <span style="color:var(--muted);font-family:monospace;font-size:12px;padding:4px 6px">${escHtml(prefix)}</span>
-      <span class="nav-separator">/</span>
-      <a href="#/project/${encodeURIComponent(prefix)}/board"   class="${view === 'board'    ? 'active' : ''}">Board</a>
-      <a href="#/project/${encodeURIComponent(prefix)}/timeline" class="${view === 'timeline' ? 'active' : ''}">Timeline</a>
-      <a href="#/project/${encodeURIComponent(prefix)}/tree"    class="${view === 'tree'     ? 'active' : ''}">Tree</a>
-      <a href="#/project/${encodeURIComponent(prefix)}/graph"   class="${view === 'graph'    ? 'active' : ''}">Graph</a>
+      <a href="#/" class="nav-links-back" data-icon="←" title="Dashboard"><span class="nav-label">←</span></a>
+      <span class="nav-prefix">${escHtml(prefix)}</span>
+      <a href="#/project/${ep}/focus"    class="nav-view ${view === 'focus'    ? 'active' : ''}" data-icon="◉" title="Focus"><span class="nav-label">Focus</span></a>
+      <a href="#/project/${ep}/board"    class="nav-view ${view === 'board'    ? 'active' : ''}" data-icon="▦" title="Board"><span class="nav-label">Board</span></a>
+      <a href="#/project/${ep}/timeline" class="nav-view ${view === 'timeline' ? 'active' : ''}" data-icon="▬" title="Timeline"><span class="nav-label">Timeline</span></a>
+      <a href="#/project/${ep}/tree"     class="nav-view ${view === 'tree'     ? 'active' : ''}" data-icon="⊞" title="Tree"><span class="nav-label">Tree</span></a>
+      <a href="#/project/${ep}/graph"    class="nav-view ${view === 'graph'    ? 'active' : ''}" data-icon="◈" title="Graph"><span class="nav-label">Graph</span></a>
     `;
   } else {
     navLinks.innerHTML = `
-      <a href="#/"         class="${hash === '#/' || hash === '' ? 'active' : ''}">Dashboard</a>
-      <a href="#/sessions" class="${hash === '#/sessions'  ? 'active' : ''}">Sessions</a>
-      <a href="#/knowledge" class="${hash === '#/knowledge' ? 'active' : ''}">Knowledge</a>
-      <a href="#/insights"  class="${hash === '#/insights'  ? 'active' : ''}">Insights</a>
+      <a href="#/"          class="nav-view ${hash === '#/' || hash === '' ? 'active' : ''}" data-icon="⌂" title="Dashboard"><span class="nav-label">Dashboard</span></a>
+      <a href="#/sessions"  class="nav-view ${hash === '#/sessions'  ? 'active' : ''}" data-icon="◷" title="Sessions"><span class="nav-label">Sessions</span></a>
+      <a href="#/knowledge" class="nav-view ${hash === '#/knowledge' ? 'active' : ''}" data-icon="◆" title="Knowledge"><span class="nav-label">Knowledge</span></a>
+      <a href="#/insights"  class="nav-view ${hash === '#/insights'  ? 'active' : ''}" data-icon="▤" title="Insights"><span class="nav-label">Insights</span></a>
     `;
   }
 }
@@ -371,6 +371,7 @@ async function renderDashboard() {
 // =========================================================
 
 router.register('/', () => renderDashboard());
+router.register('/project/:prefix/focus',    (p) => renderFocus(p.prefix));
 router.register('/project/:prefix/board',    (p) => renderKanban(p.prefix));
 router.register('/project/:prefix/timeline', (p) => renderTimeline(p.prefix));
 router.register('/project/:prefix/tree',     (p) => renderTree(p.prefix));
