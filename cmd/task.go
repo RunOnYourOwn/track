@@ -52,8 +52,10 @@ func init() {
 	taskLinkCmd.Flags().String("blocks", "", "Task ID that this task blocks")
 	taskLinkCmd.Flags().String("type", "blocks", "Dependency type: blocks, soft, informational")
 	taskLinkCmd.Flags().String("reason", "", "Reason for dependency")
+	_ = taskLinkCmd.MarkFlagRequired("blocks")
 
 	taskUnlinkCmd.Flags().String("blocks", "", "Task ID to unlink")
+	_ = taskUnlinkCmd.MarkFlagRequired("blocks")
 
 	taskNextCmd.Flags().String("project", "", "Project prefix")
 }

@@ -12,10 +12,10 @@ async function renderKnowledge() {
       </div>
 
       <div class="tab-bar" style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:20px">
-        <button class="tab-btn active" data-tab="decisions" onclick="knowledgeSwitchTab('decisions')">
+        <button class="tab-btn active" data-tab="decisions">
           Decisions
         </button>
-        <button class="tab-btn" data-tab="learnings" onclick="knowledgeSwitchTab('learnings')">
+        <button class="tab-btn" data-tab="learnings">
           Learnings
         </button>
       </div>
@@ -29,6 +29,11 @@ async function renderKnowledge() {
       </div>
     </div>
   `);
+
+  // Wire tab buttons (no inline handlers — CSP blocks them).
+  document.querySelectorAll('.tab-bar .tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => knowledgeSwitchTab(btn.dataset.tab));
+  });
 
   // Load both in parallel
   let projects;
@@ -133,8 +138,7 @@ function renderDecisionsPanel(decisions, projects) {
   const statuses = ['open', 'decided', 'expired', 'superseded'];
   const checkboxes = statuses.map(s => `
     <label class="filter-check" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
-      <input type="checkbox" value="${s}" checked
-        onchange="knowledgeToggleStatus('${s}', this.checked)"
+      <input type="checkbox" value="${s}" checked data-status-filter
         style="accent-color:#58a6ff">
       <span class="badge badge-decision-status badge-decision-${s}">${capitalize(s)}</span>
     </label>
@@ -148,12 +152,14 @@ function renderDecisionsPanel(decisions, projects) {
     <div id="kb-decision-list"></div>
   `;
 
-  // Expose toggle fn on window for inline handlers
-  window.knowledgeToggleStatus = (status, checked) => {
-    if (checked) activeStatuses.add(status);
-    else activeStatuses.delete(status);
-    renderDecisionList();
-  };
+  // Wire status filters via listeners (no inline handlers — CSP blocks them).
+  panel.querySelectorAll('input[data-status-filter]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) activeStatuses.add(cb.value);
+      else activeStatuses.delete(cb.value);
+      renderDecisionList();
+    });
+  });
 
   renderDecisionList();
 }
@@ -242,8 +248,7 @@ function renderLearningsPanel(learnings, projects) {
       <button class="cat-pill active"
         data-cat="${escHtml(cat)}"
         style="background:${cc.bg};color:${cc.text};border:1px solid transparent;
-               border-radius:12px;padding:3px 10px;font-size:12px;cursor:pointer"
-        onclick="knowledgeToggleCat('${escHtml(cat)}', this)">
+               border-radius:12px;padding:3px 10px;font-size:12px;cursor:pointer">
         ${capitalize(cat)}
       </button>`;
   }).join('');
@@ -251,10 +256,8 @@ function renderLearningsPanel(learnings, projects) {
   panel.innerHTML = `
     <div class="learnings-controls" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:16px">
       <input id="kb-search" type="search" placeholder="Search learnings…"
-        class="form-input" style="flex:1;min-width:200px;max-width:360px"
-        oninput="knowledgeOnSearch(this.value)">
-      <select id="kb-project-filter" class="form-select" style="min-width:160px"
-        onchange="knowledgeFilterProject(this.value)">
+        class="form-input" style="flex:1;min-width:200px;max-width:360px">
+      <select id="kb-project-filter" class="form-select" style="min-width:160px">
         <option value="">All projects</option>
         ${projectOpts}
       </select>
@@ -266,7 +269,7 @@ function renderLearningsPanel(learnings, projects) {
     <div id="kb-learnings-list"></div>
   `;
 
-  window.knowledgeToggleCat = (cat, btn) => {
+  const toggleCat = (cat, btn) => {
     if (activeCategories.has(cat)) {
       activeCategories.delete(cat);
       btn.style.opacity = '0.4';
@@ -279,12 +282,12 @@ function renderLearningsPanel(learnings, projects) {
     renderLearningsList(learnings, activeCategories, activeProject, currentSearch, catColor);
   };
 
-  window.knowledgeFilterProject = val => {
+  const filterProject = val => {
     activeProject = val;
     renderLearningsList(learnings, activeCategories, activeProject, currentSearch, catColor);
   };
 
-  window.knowledgeOnSearch = val => {
+  const onSearch = val => {
     clearTimeout(searchDebounce);
     searchDebounce = setTimeout(async () => {
       currentSearch = val.trim();
@@ -318,6 +321,15 @@ function renderLearningsPanel(learnings, projects) {
       }
     }, 300);
   };
+
+  // Wire controls via listeners (no inline handlers — CSP blocks them).
+  panel.querySelectorAll('.cat-pill').forEach(btn => {
+    btn.addEventListener('click', () => toggleCat(btn.dataset.cat, btn));
+  });
+  const searchEl = document.getElementById('kb-search');
+  if (searchEl) searchEl.addEventListener('input', () => onSearch(searchEl.value));
+  const projEl = document.getElementById('kb-project-filter');
+  if (projEl) projEl.addEventListener('change', () => filterProject(projEl.value));
 
   // Initial render
   renderLearningsList(learnings, activeCategories, activeProject, '', catColor);

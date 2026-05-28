@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +12,10 @@ import (
 	"github.com/RunOnYourOwn/track/internal/db"
 	"github.com/RunOnYourOwn/track/internal/models"
 )
+
+// maxBodyBytes caps request bodies to prevent memory-exhaustion via huge/deeply
+// nested JSON on the unauthenticated API.
+const maxBodyBytes = 1 << 20 // 1 MiB
 
 // RegisterRoutes wires all /api/* endpoints onto mux.
 // It wraps every handler with CORS middleware so the web UI
@@ -68,6 +73,9 @@ func cors(next http.HandlerFunc) http.HandlerFunc {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
 		next(w, r)
 	}
 }
@@ -98,6 +106,13 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeServerError logs the real error server-side and returns a generic 500 so
+// raw database/driver internals (SQL, table/column names) don't leak to clients.
+func writeServerError(w http.ResponseWriter, err error) {
+	log.Printf("api: internal error: %v", err)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 }
 
 // splitCSV splits a comma-separated query parameter value, dropping blanks.
@@ -170,7 +185,7 @@ func coalesceDeps(s []models.Dependency) []models.Dependency {
 func (h *handler) listProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := db.ListProjects(h.conn)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceProjects(projects))
@@ -184,16 +199,17 @@ func (h *handler) getProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, p)
 }
 
 type updateProjectRequest struct {
-	WIPLimit *int   `json:"wip_limit"`
-	Phase    string `json:"phase"`
-	Name     string `json:"name"`
+	WIPLimit *int `json:"wip_limit"`
+	// Pointer so an explicit "" can clear the phase (omitted = leave unchanged).
+	Phase *string `json:"phase"`
+	Name  string  `json:"name"`
 }
 
 func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -204,7 +220,7 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -216,26 +232,26 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 
 	if req.WIPLimit != nil {
 		if err := db.UpdateProjectField(h.conn, p.ID, "wip_limit", fmt.Sprintf("%d", *req.WIPLimit)); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 	}
-	if req.Phase != "" {
-		if err := db.UpdateProjectField(h.conn, p.ID, "phase", req.Phase); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+	if req.Phase != nil {
+		if err := db.UpdateProjectField(h.conn, p.ID, "phase", *req.Phase); err != nil {
+			writeServerError(w, err)
 			return
 		}
 	}
 	if req.Name != "" {
 		if err := db.UpdateProjectField(h.conn, p.ID, "name", req.Name); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 	}
 
 	updated, err := db.GetProjectByPrefix(h.conn, prefix)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
@@ -264,7 +280,7 @@ func (h *handler) createProject(w http.ResponseWriter, r *http.Request) {
 
 	p, err := db.CreateProject(h.conn, req.Prefix, req.Name, req.Phase, req.PhaseType, req.ExternalID, req.Metadata, req.WIPLimit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, p)
@@ -280,7 +296,7 @@ func (h *handler) listTasks(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -293,7 +309,7 @@ func (h *handler) listTasks(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := db.ListTasks(h.conn, opts)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -340,7 +356,7 @@ func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -368,7 +384,7 @@ func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
 		DueDate:       req.DueDate,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, task)
@@ -382,7 +398,7 @@ func (h *handler) getTask(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "task not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -394,7 +410,8 @@ type updateTaskRequest struct {
 	ParentID    *string `json:"parent_id"`
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
-	DueDate     string  `json:"due_date"`
+	// Pointer so an explicit "" can clear the due date (omitted = leave unchanged).
+	DueDate *string `json:"due_date"`
 }
 
 func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
@@ -405,7 +422,7 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "task not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -418,12 +435,12 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Status != "" {
 		if req.Status == "done" {
 			if err := db.CompleteTask(h.conn, id, req.ActualHours); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				writeServerError(w, err)
 				return
 			}
 		} else {
 			if err := db.MoveTask(h.conn, id, req.Status); err != nil {
-				writeError(w, http.StatusInternalServerError, err.Error())
+				writeServerError(w, err)
 				return
 			}
 		}
@@ -431,35 +448,35 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 
 	if req.ParentID != nil {
 		if err := db.SetParentID(h.conn, id, *req.ParentID); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 	}
 
 	if req.Title != "" {
 		if err := db.UpdateTaskField(h.conn, id, "title", req.Title); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 	}
 
 	if req.Priority != "" {
 		if err := db.UpdateTaskField(h.conn, id, "priority", req.Priority); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 	}
 
-	if req.DueDate != "" {
-		if err := db.UpdateTaskField(h.conn, id, "due_date", req.DueDate); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+	if req.DueDate != nil {
+		if err := db.UpdateTaskField(h.conn, id, "due_date", *req.DueDate); err != nil {
+			writeServerError(w, err)
 			return
 		}
 	}
 
 	task, err := db.GetTask(h.conn, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
@@ -471,7 +488,7 @@ func (h *handler) getDeps(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	deps, err := db.GetBlockers(h.conn, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceDeps(deps))
@@ -497,7 +514,7 @@ func (h *handler) createDep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := db.CreateDependency(h.conn, fromID, req.ToTaskID, req.DepType, req.Reason); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, models.Dependency{
@@ -513,7 +530,7 @@ func (h *handler) deleteDep(w http.ResponseWriter, r *http.Request) {
 	toID := r.PathValue("targetId")
 
 	if err := db.DeleteDependency(h.conn, fromID, toID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -534,7 +551,7 @@ func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -547,7 +564,7 @@ func (h *handler) listSessions(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := db.ListSessions(h.conn, p.ID, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -577,7 +594,7 @@ func (h *handler) getSessionStats(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	stats, err := db.GetSessionStats(h.conn, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	if stats == nil {
@@ -595,7 +612,7 @@ func (h *handler) listDecisions(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -604,7 +621,7 @@ func (h *handler) listDecisions(w http.ResponseWriter, r *http.Request) {
 
 	decisions, err := db.ListDecisions(h.conn, p.ID, statuses, expiring)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceDecisions(decisions))
@@ -618,7 +635,7 @@ func (h *handler) listLearnings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -628,12 +645,12 @@ func (h *handler) listLearnings(w http.ResponseWriter, r *http.Request) {
 	var learnings []models.Learning
 	var fetchErr error
 	if q != "" {
-		learnings, fetchErr = db.SearchLearnings(h.conn, q)
+		learnings, fetchErr = db.SearchLearnings(h.conn, p.ID, q)
 	} else {
 		learnings, fetchErr = db.ListLearnings(h.conn, p.ID, category)
 	}
 	if fetchErr != nil {
-		writeError(w, http.StatusInternalServerError, fetchErr.Error())
+		writeServerError(w, fetchErr)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceLearnings(learnings))
@@ -647,7 +664,7 @@ func (h *handler) listBlockers(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -655,7 +672,7 @@ func (h *handler) listBlockers(w http.ResponseWriter, r *http.Request) {
 
 	blockers, err := db.ListBlockers(h.conn, p.ID, openOnly)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceBlockers(blockers))
@@ -686,7 +703,7 @@ type dashboardResponse struct {
 func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	projects, err := db.ListProjects(h.conn)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -695,13 +712,13 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	for _, p := range projects {
 		tasks, err := db.ListTasks(h.conn, db.ListTaskOpts{ProjectID: p.ID})
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 
 		openBlockers, err := db.ListBlockers(h.conn, p.ID, true)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
+			writeServerError(w, err)
 			return
 		}
 
@@ -749,12 +766,12 @@ func (h *handler) listSprints(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	sprints, err := db.ListSprints(h.conn, p.ID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceSprints(sprints))
@@ -775,7 +792,7 @@ func (h *handler) createSprint(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "project not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 
@@ -797,7 +814,7 @@ func (h *handler) createSprint(w http.ResponseWriter, r *http.Request) {
 		EndDate:   req.EndDate,
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, sprint)
@@ -818,11 +835,23 @@ func (h *handler) updateSprint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "status is required")
 		return
 	}
-	if err := db.UpdateSprintStatus(h.conn, id, req.Status); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if _, err := db.GetSprint(h.conn, id); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "sprint not found")
+			return
+		}
+		writeServerError(w, err)
 		return
 	}
-	sprint, _ := db.GetSprint(h.conn, id)
+	if err := db.UpdateSprintStatus(h.conn, id, req.Status); err != nil {
+		writeServerError(w, err)
+		return
+	}
+	sprint, err := db.GetSprint(h.conn, id)
+	if err != nil {
+		writeServerError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, sprint)
 }
 
@@ -830,7 +859,7 @@ func (h *handler) addSprintTask(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.PathValue("id")
 	taskID := r.PathValue("taskId")
 	if err := db.AddTaskToSprint(h.conn, sprintID, taskID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
@@ -840,7 +869,7 @@ func (h *handler) removeSprintTask(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.PathValue("id")
 	taskID := r.PathValue("taskId")
 	if err := db.RemoveTaskFromSprint(h.conn, sprintID, taskID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
@@ -850,7 +879,7 @@ func (h *handler) listSprintTasks(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.PathValue("id")
 	tasks, err := db.ListSprintTasks(h.conn, sprintID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceTasks(tasks))

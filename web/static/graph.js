@@ -446,7 +446,7 @@ function _openGraphDetail(task, prefix, edges, taskById) {
     </div>
     ${task.description ? `<p class="graph-detail-desc">${escHtml(task.description)}</p>` : ''}
     ${parentLabel ? `<div class="graph-detail-row"><span class="graph-detail-label">Feature</span><span class="graph-detail-value">${escHtml(parentLabel)}</span></div>` : ''}
-    <div class="graph-detail-row"><span class="graph-detail-label">Source</span><span class="graph-detail-value">${task.source_type || '—'}</span></div>
+    <div class="graph-detail-row"><span class="graph-detail-label">Source</span><span class="graph-detail-value">${escHtml(task.source_type || '—')}</span></div>
     <div class="graph-detail-row"><span class="graph-detail-label">Created</span><span class="graph-detail-value">${fmtDate(task.created_at)}</span></div>
     ${task.due_date ? `<div class="graph-detail-row"><span class="graph-detail-label">Due</span><span class="graph-detail-value">${fmtDate(task.due_date)}</span></div>` : ''}
     ${blockedBy.length > 0 ? `

@@ -25,16 +25,22 @@ func Push(conn *sql.DB, cfg *Config, teamFilter string, dryRun bool) (*PushStats
 	client := NewClient(cfg.Org, pat)
 	stats := &PushStats{}
 
+	var syncErrs []string
 	for _, sync := range cfg.Syncs {
 		if teamFilter != "" && !strings.EqualFold(sync.TrackProject, teamFilter) {
 			continue
 		}
 
 		if err := pushTeam(conn, client, cfg, sync, stats, dryRun); err != nil {
-			return stats, fmt.Errorf("push %s: %w", sync.TrackProject, err)
+			fmt.Printf("  warning: push %s failed: %v\n", sync.TrackProject, err)
+			syncErrs = append(syncErrs, fmt.Sprintf("%s: %v", sync.TrackProject, err))
+			continue
 		}
 	}
 
+	if len(syncErrs) > 0 {
+		return stats, fmt.Errorf("%d team push(es) failed: %s", len(syncErrs), strings.Join(syncErrs, "; "))
+	}
 	return stats, nil
 }
 
@@ -54,31 +60,32 @@ func pushTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 			continue
 		}
 
-		adoState, ok := MapStatusToState(task.Status)
-		if !ok {
-			stats.Skipped++
-			continue
-		}
-
 		var ctx AgentContext
 		if err := json.Unmarshal([]byte(task.AgentContext), &ctx); err != nil {
 			stats.Failed++
 			continue
 		}
 
-		// Compare stored state with desired — skip if already matches
-		currentState := storedAdoState(ctx)
-		if currentState == adoState {
-			stats.Skipped++
-			continue
-		}
-
+		// Always push local title/description (track is the editing surface here);
+		// push state only when it maps to an ADO state AND has actually changed.
 		ops := []PatchOperation{
-			{Op: "replace", Path: "/fields/System.State", Value: adoState},
+			{Op: "replace", Path: "/fields/System.Title", Value: task.Title},
+			{Op: "replace", Path: "/fields/System.Description", Value: task.Description},
+		}
+		adoState, stateMapped := MapStatusToState(task.Status)
+		stateChanged := stateMapped && storedAdoState(ctx) != adoState
+		if stateChanged {
+			ops = append(ops, PatchOperation{Op: "replace", Path: "/fields/System.State", Value: adoState})
 		}
 
 		if dryRun {
-			fmt.Printf("[dry-run] Push %d: %s → %s\n", ctx.AdoID, task.Status, adoState)
+			fmt.Printf("[dry-run] Push %d: title/description%s\n", ctx.AdoID,
+				func() string {
+					if stateChanged {
+						return fmt.Sprintf(" + state %s → %s", task.Status, adoState)
+					}
+					return ""
+				}())
 			stats.Pushed++
 			continue
 		}
@@ -91,6 +98,9 @@ func pushTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 		}
 
 		ctx.AdoRev = result.Rev
+		if stateChanged {
+			ctx.AdoState = adoState
+		}
 		ctx.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
 		ctxJSON, _ := json.Marshal(ctx)
 		if err := db.SyncAgentContext(conn, task.ID, string(ctxJSON)); err != nil {
@@ -103,10 +113,11 @@ func pushTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 	return nil
 }
 
+// storedAdoState returns the raw ADO state recorded at the last pull/push for
+// this task. Pull writes AdoState=<current ADO state>; push writes the state it
+// just set. When the desired state already matches, the state PATCH is skipped
+// (e.g. a task that's only locally dirty in non-status fields). Empty (legacy
+// rows synced before this field existed) means "unknown" → push to be safe.
 func storedAdoState(ctx AgentContext) string {
-	// The pull stores the mapped status, not the raw ADO state.
-	// We don't store the literal ADO state in agent_context, so we infer from rev tracking.
-	// If the rev hasn't changed remotely (tracked via pull), we can safely push.
-	// For comparison purposes, we return empty — meaning "unknown, always push".
-	return ""
+	return ctx.AdoState
 }

@@ -179,6 +179,9 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 			t, _ := parseTime(enteredAtStr)
 			ipTimes[taskID] = t
 		}
+		if err := ipRows.Err(); err != nil {
+			return nil, err
+		}
 
 		// Get last done time within the session window for each completed task
 		doneQuery := `SELECT task_id, MAX(entered_at) FROM task_status_history
@@ -203,6 +206,9 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 			if ipTime, ok := ipTimes[taskID]; ok {
 				cycleTimeMap[taskID] = int64(doneTime.Sub(ipTime).Seconds())
 			}
+		}
+		if err := doneRows.Err(); err != nil {
+			return nil, err
 		}
 	}
 
@@ -229,6 +235,44 @@ func GetSessionStats(conn *sql.DB, sessionID string) (*models.SessionStats, erro
 	stats.TasksCompleted = len(completedSet)
 
 	return stats, nil
+}
+
+// ComputeFlowEfficiency returns active (in_progress) time over total lead time
+// across a project's completed tasks, in [0,1]. Returns 0 when no work is done.
+func ComputeFlowEfficiency(conn *sql.DB, projectID string) (float64, error) {
+	var activeSec sql.NullFloat64
+	if err := conn.QueryRow(`
+		SELECT COALESCE(SUM((julianday(h.exited_at) - julianday(h.entered_at)) * 86400), 0)
+		FROM task_status_history h
+		JOIN tasks t ON t.id = h.task_id
+		WHERE t.project_id = ? AND t.status = 'done'
+		  AND h.status = 'in_progress' AND h.exited_at IS NOT NULL`, projectID).Scan(&activeSec); err != nil {
+		return 0, err
+	}
+
+	var leadSec sql.NullFloat64
+	if err := conn.QueryRow(`
+		SELECT COALESCE(SUM(lead), 0) FROM (
+			SELECT (julianday(MAX(CASE WHEN h.status = 'done' THEN h.entered_at END))
+			        - julianday(MIN(h.entered_at))) * 86400 AS lead
+			FROM task_status_history h
+			JOIN tasks t ON t.id = h.task_id
+			WHERE t.project_id = ? AND t.status = 'done'
+			GROUP BY h.task_id
+		)`, projectID).Scan(&leadSec); err != nil {
+		return 0, err
+	}
+
+	if !leadSec.Valid || leadSec.Float64 <= 0 {
+		return 0, nil
+	}
+	eff := activeSec.Float64 / leadSec.Float64
+	if eff > 1 {
+		eff = 1
+	} else if eff < 0 {
+		eff = 0
+	}
+	return eff, nil
 }
 
 func GetSessionStatsBatch(conn *sql.DB, sessionIDs []string) (map[string]models.SessionSummary, error) {

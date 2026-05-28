@@ -50,7 +50,7 @@ func LoadConfig() (*Config, error) {
 
 func SaveConfig(cfg *Config) error {
 	path := ConfigPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")

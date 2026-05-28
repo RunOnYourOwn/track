@@ -61,8 +61,18 @@ func TestPushTeamEndToEnd(t *testing.T) {
 
 		var ops []PatchOperation
 		json.NewDecoder(r.Body).Decode(&ops)
-		if len(ops) != 1 || ops[0].Value != "In Progress" {
-			t.Errorf("unexpected patch ops: %+v", ops)
+		// Push now sends title + description always, and state when it changed.
+		var sawState bool
+		for _, op := range ops {
+			if op.Path == "/fields/System.State" {
+				sawState = true
+				if op.Value != "In Progress" {
+					t.Errorf("expected state 'In Progress', got %v", op.Value)
+				}
+			}
+		}
+		if !sawState {
+			t.Errorf("expected a System.State op among: %+v", ops)
 		}
 
 		patchReceived = true
@@ -119,12 +129,21 @@ func TestPushSkipsCleanTasks(t *testing.T) {
 	}
 }
 
-func TestPushSkipsUnmappableStatus(t *testing.T) {
-	// Task is dirty but status is 'blocked' which has no ADO mapping
+func TestPushUnmappableStatusPushesFieldsOnly(t *testing.T) {
+	// Task is dirty but status is 'blocked' (no ADO state mapping): title and
+	// description still push; no System.State op is sent.
 	conn, cfg, _ := setupPushTest(t, "blocked", "2026-05-01T00:00:00Z")
 
+	var ops []PatchOperation
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&ops)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(WorkItem{ID: 100, Rev: 6, Fields: map[string]interface{}{}})
+	}))
+	defer server.Close()
+
 	t.Setenv("TRACK_ADO_PAT", "testpat")
-	client := &Client{org: "myorg", pat: "testpat", httpCli: http.DefaultClient, baseURL: "http://unused"}
+	client := &Client{org: "myorg", pat: "testpat", httpCli: server.Client(), baseURL: server.URL}
 
 	stats := &PushStats{}
 	err := pushTeam(conn, client, cfg, cfg.Syncs[0], stats, false)
@@ -132,11 +151,13 @@ func TestPushSkipsUnmappableStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if stats.Skipped != 1 {
-		t.Errorf("expected 1 skipped, got %d", stats.Skipped)
+	for _, op := range ops {
+		if op.Path == "/fields/System.State" {
+			t.Errorf("blocked status should not push a state op, got %+v", ops)
+		}
 	}
-	if stats.Pushed != 0 {
-		t.Errorf("expected 0 pushed, got %d", stats.Pushed)
+	if stats.Pushed != 1 {
+		t.Errorf("expected 1 pushed (title/description), got %d", stats.Pushed)
 	}
 }
 

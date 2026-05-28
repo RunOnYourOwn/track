@@ -171,7 +171,7 @@ func TestLearningLifecycle(t *testing.T) {
 	}
 
 	// Search
-	results, err := SearchLearnings(db, "WAL")
+	results, err := SearchLearnings(db, "", "WAL")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestLearningLifecycle(t *testing.T) {
 	}
 
 	// Search no match
-	none, err := SearchLearnings(db, "nonexistent123")
+	none, err := SearchLearnings(db, "", "nonexistent123")
 	if err != nil {
 		t.Fatal(err)
 	}

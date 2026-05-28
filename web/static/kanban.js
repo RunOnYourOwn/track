@@ -19,6 +19,16 @@ const COLUMN_DROP_STATUS = {
   done:        'done',
 };
 
+// Map any task status to exactly one column. Crucially, EVERY waiting_* status
+// (waiting_review/_external/_dependency/...) lands in Waiting, and any unknown
+// status falls back to Backlog — so no task can silently vanish from the board.
+function _columnIdForStatus(status) {
+  if (status === 'done') return 'done';
+  if (status === 'in_progress') return 'in_progress';
+  if (status && status.indexOf('waiting') === 0) return 'waiting';
+  return 'todo';
+}
+
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 const STALE_DAYS = 7;
 
@@ -125,7 +135,7 @@ function _filterBar() {
   `).join('');
 
   const sourceOptions = ['<option value="">All sources</option>']
-    .concat(sourceTypes.map(s => `<option value="${s}" ${_filters.sourceTypes.includes(s) ? 'selected' : ''}>${s}</option>`))
+    .concat(sourceTypes.map(s => `<option value="${escHtml(s)}" ${_filters.sourceTypes.includes(s) ? 'selected' : ''}>${escHtml(s)}</option>`))
     .join('');
 
   const blockedCount = _tasks.filter(t => t.blocked).length;
@@ -152,7 +162,7 @@ function _filterBar() {
 }
 
 function _renderColumn(col, tasks) {
-  const colTasks = tasks.filter(t => col.statuses.includes(t.status));
+  const colTasks = tasks.filter(t => _columnIdForStatus(t.status) === col.id);
   const epicIds = new Set(_tasks.filter(t => t.type === 'epic').map(t => t.id));
   const features = colTasks.filter(t => (t.type || 'task') === 'feature');
   const orphanTasks = colTasks.filter(t => (t.type || 'task') === 'task' && (!t.parent_id || epicIds.has(t.parent_id)));
@@ -350,11 +360,11 @@ function _renderDetailPanel(task) {
           <span class="priority-badge ${task.priority}">${task.priority}</span>
           <span class="status-badge ${task.status}">${task.status.replace(/_/g, ' ')}</span>
           ${task.type && task.type !== 'task' ? `<span class="type-badge type-${task.type}">${task.type}</span>` : ''}
-          ${task.estimate_size ? `<span class="badge">${task.estimate_size}</span>` : ''}
+          ${task.estimate_size ? `<span class="badge">${escHtml(task.estimate_size)}</span>` : ''}
         </div>
         ${task.description ? `<p style="color:var(--muted);margin-bottom:12px">${escHtml(task.description)}</p>` : ''}
-        <div class="stat-row"><span class="stat-label">Type</span><span class="stat-value">${task.type || 'task'}</span></div>
-        <div class="stat-row"><span class="stat-label">Source</span><span class="stat-value">${task.source_type || '—'}</span></div>
+        <div class="stat-row"><span class="stat-label">Type</span><span class="stat-value">${escHtml(task.type || 'task')}</span></div>
+        <div class="stat-row"><span class="stat-label">Source</span><span class="stat-value">${escHtml(task.source_type || '—')}</span></div>
         <div class="stat-row"><span class="stat-label">Created</span><span class="stat-value">${fmtDate(task.created_at)}</span></div>
         <div class="stat-row"><span class="stat-label">Updated</span><span class="stat-value">${fmtDate(task.updated_at)}</span></div>
         ${task.due_date ? `<div class="stat-row"><span class="stat-label">Due</span><span class="stat-value">${fmtDate(task.due_date)}</span></div>` : ''}

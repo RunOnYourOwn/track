@@ -2,10 +2,43 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"github.com/RunOnYourOwn/track/internal/models"
 )
+
+// ResolveSprintID accepts either a full 26-char ULID or a unique id prefix (the
+// CLI displays the leading 8 chars), and returns the full sprint id.
+func ResolveSprintID(d *sql.DB, idOrPrefix string) (string, error) {
+	if len(idOrPrefix) == 26 {
+		return idOrPrefix, nil
+	}
+	rows, err := d.Query(`SELECT id FROM sprints WHERE id LIKE ? || '%' LIMIT 2`, idOrPrefix)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	switch len(ids) {
+	case 0:
+		return "", fmt.Errorf("sprint %q not found", idOrPrefix)
+	case 1:
+		return ids[0], nil
+	default:
+		return "", fmt.Errorf("ambiguous sprint id %q (matches multiple)", idOrPrefix)
+	}
+}
 
 
 type CreateSprintOpts struct {
