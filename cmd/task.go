@@ -20,6 +20,7 @@ func init() {
 	taskCmd.AddCommand(taskMoveCmd)
 	taskCmd.AddCommand(taskDoneCmd)
 	taskCmd.AddCommand(taskDeleteCmd)
+	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskLinkCmd)
 	taskCmd.AddCommand(taskUnlinkCmd)
 	taskCmd.AddCommand(taskNextCmd)
@@ -56,6 +57,18 @@ func init() {
 
 	taskUnlinkCmd.Flags().String("blocks", "", "Task ID to unlink")
 	_ = taskUnlinkCmd.MarkFlagRequired("blocks")
+
+	taskEditCmd.Flags().String("title", "", "New title")
+	taskEditCmd.Flags().String("description", "", "New description")
+	taskEditCmd.Flags().String("type", "", "Type: epic, feature, task")
+	taskEditCmd.Flags().String("priority", "", "Priority: urgent, high, medium, low")
+	taskEditCmd.Flags().String("estimate", "", "T-shirt size: XS, S, M, L, XL")
+	taskEditCmd.Flags().Float64("hours", 0, "Estimated hours")
+	taskEditCmd.Flags().Int("agent-minutes", 0, "Estimated agent minutes")
+	taskEditCmd.Flags().String("due", "", "Due date (YYYY-MM-DD)")
+	taskEditCmd.Flags().String("tags", "", "Comma-separated tags")
+	taskEditCmd.Flags().String("parent", "", "Parent task ID (or 'none' to unparent)")
+	taskEditCmd.Flags().Int("sort-order", 0, "Sort order within parent")
 
 	taskNextCmd.Flags().String("project", "", "Project prefix")
 }
@@ -276,6 +289,83 @@ var taskDeleteCmd = &cobra.Command{
 			return err
 		}
 		return db.DeleteTask(conn, taskID)
+	},
+}
+
+var taskEditCmd = &cobra.Command{
+	Use:   "edit [id]",
+	Short: "Edit task fields",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		conn, _ := db.Open()
+		taskID, err := resolveID(args[0])
+		if err != nil {
+			return err
+		}
+
+		fields := map[string]string{}
+		if v, _ := cmd.Flags().GetString("title"); v != "" {
+			fields["title"] = v
+		}
+		if v, _ := cmd.Flags().GetString("description"); v != "" {
+			fields["description"] = v
+		}
+		if v, _ := cmd.Flags().GetString("type"); v != "" {
+			fields["type"] = v
+		}
+		if v, _ := cmd.Flags().GetString("priority"); v != "" {
+			fields["priority"] = v
+		}
+		if v, _ := cmd.Flags().GetString("estimate"); v != "" {
+			fields["estimate_size"] = v
+		}
+		if v, _ := cmd.Flags().GetFloat64("hours"); v > 0 {
+			fields["estimate_hours"] = strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		if v, _ := cmd.Flags().GetInt("agent-minutes"); v > 0 {
+			fields["estimate_agent_minutes"] = strconv.Itoa(v)
+		}
+		if v, _ := cmd.Flags().GetString("due"); v != "" {
+			fields["due_date"] = v
+		}
+		if v, _ := cmd.Flags().GetString("tags"); v != "" {
+			fields["tags"] = v
+		}
+		if v, _ := cmd.Flags().GetInt("sort-order"); v > 0 {
+			fields["sort_order"] = strconv.Itoa(v)
+		}
+
+		for field, value := range fields {
+			if err := db.UpdateTaskField(conn, taskID, field, value); err != nil {
+				return fmt.Errorf("updating %s: %w", field, err)
+			}
+		}
+
+		if parent, _ := cmd.Flags().GetString("parent"); parent != "" {
+			parentID := ""
+			if parent != "none" {
+				parentID, err = resolveID(parent)
+				if err != nil {
+					return fmt.Errorf("parent %q: %w", parent, err)
+				}
+			}
+			if err := db.SetParentID(conn, taskID, parentID); err != nil {
+				return err
+			}
+		}
+
+		task, err := db.GetTask(conn, taskID)
+		if err != nil {
+			return err
+		}
+
+		if jsonOutput {
+			return json.NewEncoder(os.Stdout).Encode(task)
+		}
+
+		prefix := getPrefix(conn, task.ProjectID, "")
+		fmt.Printf("Updated %s-%d: %s\n", prefix, task.Seq, task.Title)
+		return nil
 	},
 }
 

@@ -251,6 +251,10 @@ function _renderFeatureCard(feat, childTasks) {
   const staleHtml = stale > STALE_DAYS
     ? `<span class="stale-indicator" title="Last updated ${stale} days ago">⏱ ${stale}d</span>`
     : '';
+  const epicName = _getEpicName(feat);
+  const epicHtml = epicName
+    ? `<div class="task-card-epic">${escHtml(epicName)}</div>`
+    : '';
 
   let taskListHtml = '';
   if (expanded && childTasks.length > 0) {
@@ -275,11 +279,12 @@ function _renderFeatureCard(feat, childTasks) {
          data-status="${feat.status}"
          role="button"
          tabindex="0"
-         aria-label="${displayId}: ${feat.title}">
+         aria-label="${displayId}: ${escHtml(feat.title)}">
       <div class="feature-card-header">
         <div class="feature-card-left">
           <div class="feature-card-id">${displayId} ${staleHtml}</div>
           <div class="feature-card-title">${escHtml(title)}</div>
+          ${epicHtml}
         </div>
         <span class="priority-badge feature-card-priority ${feat.priority}">${feat.priority}</span>
       </div>
@@ -326,6 +331,10 @@ function _renderTaskCard(task) {
   const blockedHtml = task.blocked
     ? `<span class="blocked-indicator" title="Blocked by dependency">●</span>`
     : '';
+  const epicName = _getEpicName(task);
+  const epicHtml = epicName
+    ? `<div class="task-card-epic">${escHtml(epicName)}</div>`
+    : '';
 
   return `
     <div class="task-card ${task.blocked ? 'task-blocked' : ''}"
@@ -335,11 +344,12 @@ function _renderTaskCard(task) {
          data-status="${task.status}"
          role="button"
          tabindex="0"
-         aria-label="${displayId}: ${task.title}">
+         aria-label="${displayId}: ${escHtml(task.title)}">
       <div class="task-card-row">
         <div class="task-card-left">
           <div class="task-card-id">${displayId} ${blockedHtml}${staleHtml}</div>
           <div class="task-card-title">${escHtml(title)}</div>
+          ${epicHtml}
         </div>
         <span class="priority-badge task-card-priority ${task.priority}">${task.priority}</span>
       </div>
@@ -349,26 +359,73 @@ function _renderTaskCard(task) {
 
 function _renderDetailPanel(task) {
   const displayId = `${_prefix}-${task.seq}`;
+  const epicName = _getEpicName(task);
+  const featureName = _getFeatureName(task);
+  const types = ['epic', 'feature', 'task'];
+  const priorities = ['urgent', 'high', 'medium', 'low'];
+  const statuses = ['todo', 'in_progress', 'done', 'blocked', 'waiting_external', 'waiting_decision', 'waiting_feedback'];
+  const sizes = ['', 'XS', 'S', 'M', 'L', 'XL'];
   return `
-    <div class="modal-backdrop" id="detail-backdrop">
-      <div class="modal" role="dialog" aria-label="Task detail">
-        <div class="modal-header">
-          <span class="modal-title">${displayId} — ${escHtml(task.title)}</span>
+    <div class="tt-modal-overlay" id="detail-backdrop">
+      <div class="tt-modal" role="dialog" aria-label="Task detail">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--muted);">${displayId}</span>
           <button class="modal-close" id="detail-close" aria-label="Close">&times;</button>
         </div>
-        <div class="detail-badges mb-16">
-          <span class="priority-badge ${task.priority}">${task.priority}</span>
-          <span class="status-badge ${task.status}">${task.status.replace(/_/g, ' ')}</span>
-          ${task.type && task.type !== 'task' ? `<span class="type-badge type-${task.type}">${task.type}</span>` : ''}
-          ${task.estimate_size ? `<span class="badge">${escHtml(task.estimate_size)}</span>` : ''}
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Title</label>
+          <input class="tt-modal-input" id="detail-title" value="${escHtml(task.title)}">
         </div>
-        ${task.description ? `<p style="color:var(--muted);margin-bottom:12px">${escHtml(task.description)}</p>` : ''}
-        <div class="stat-row"><span class="stat-label">Type</span><span class="stat-value">${escHtml(task.type || 'task')}</span></div>
-        <div class="stat-row"><span class="stat-label">Source</span><span class="stat-value">${escHtml(task.source_type || '—')}</span></div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Description</label>
+          <textarea class="tt-modal-textarea" id="detail-description" rows="8">${escHtml(task.description || '')}</textarea>
+        </div>
+        <div class="tt-modal-row">
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Type</label>
+            <select class="tt-modal-input" id="detail-type">${types.map(t => `<option value="${t}" ${(task.type || 'task') === t ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          </div>
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Priority</label>
+            <select class="tt-modal-input" id="detail-priority">${priorities.map(p => `<option value="${p}" ${task.priority === p ? 'selected' : ''}>${p}</option>`).join('')}</select>
+          </div>
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Status</label>
+            <select class="tt-modal-input" id="detail-status">${statuses.map(s => `<option value="${s}" ${task.status === s ? 'selected' : ''}>${s.replace(/_/g, ' ')}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="tt-modal-row">
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Estimate Size</label>
+            <select class="tt-modal-input" id="detail-estimate-size">${sizes.map(s => `<option value="${s}" ${(task.estimate_size || '') === s ? 'selected' : ''}>${s || '—'}</option>`).join('')}</select>
+          </div>
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Hours</label>
+            <input class="tt-modal-input" id="detail-hours" type="number" step="0.25" value="${task.estimate_hours || ''}">
+          </div>
+          <div class="tt-modal-field">
+            <label class="tt-modal-label">Due Date</label>
+            <input class="tt-modal-input" id="detail-due" type="date" value="${task.due_date || ''}">
+          </div>
+        </div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Parent</label>
+          <select class="tt-modal-input" id="detail-parent">
+            <option value="">(none)</option>
+            ${_tasks.filter(t => t.id !== task.id && (t.type === 'epic' || t.type === 'feature')).map(t => `<option value="${t.id}" ${task.parent_id === t.id ? 'selected' : ''}>${_prefix}-${t.seq} ${escHtml(t.title.length > 40 ? t.title.slice(0, 37) + '...' : t.title)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="stat-row mt-8"><span class="stat-label">Source</span><span class="stat-value">${escHtml(task.source_type || '—')}</span></div>
         <div class="stat-row"><span class="stat-label">Created</span><span class="stat-value">${fmtDate(task.created_at)}</span></div>
         <div class="stat-row"><span class="stat-label">Updated</span><span class="stat-value">${fmtDate(task.updated_at)}</span></div>
-        ${task.due_date ? `<div class="stat-row"><span class="stat-label">Due</span><span class="stat-value">${fmtDate(task.due_date)}</span></div>` : ''}
         <div id="detail-deps-container" class="mt-16"><p class="text-muted">Loading deps…</p></div>
+        <div class="tt-modal-actions">
+          <button class="tt-modal-btn danger" id="detail-delete">Delete</button>
+          <div style="display:flex;gap:8px;">
+            <button class="tt-modal-btn" id="detail-cancel">Cancel</button>
+            <button class="tt-modal-btn primary" id="detail-save">Save</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -466,8 +523,14 @@ function _attachBoardListeners() {
 
   const closeBtn = document.getElementById('detail-close');
   if (closeBtn) closeBtn.addEventListener('click', _closeDetail);
+  const cancelBtn = document.getElementById('detail-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', _closeDetail);
   const backdrop = document.getElementById('detail-backdrop');
   if (backdrop) backdrop.addEventListener('click', (e) => { if (e.target === backdrop) _closeDetail(); });
+  const saveBtn = document.getElementById('detail-save');
+  if (saveBtn) saveBtn.addEventListener('click', _saveDetail);
+  const deleteBtn = document.getElementById('detail-delete');
+  if (deleteBtn) deleteBtn.addEventListener('click', _deleteDetail);
 
   _attachDragListeners();
 }
@@ -541,9 +604,18 @@ async function _openDetail(taskId) {
     if (!_detail || _detail.id !== taskId) return;
     const container = document.getElementById('detail-deps-container');
     if (container) {
-      container.innerHTML = deps.length > 0
-        ? `<ul style="list-style:none;padding:0">${deps.map(d => `<li class="stat-row"><span class="stat-label">${escHtml(d.dep_type || 'blocks')}</span><span class="stat-value mono">${escHtml(d.to_task_id.slice(-8))}</span></li>`).join('')}</ul>`
-        : '<p class="text-muted">No dependencies.</p>';
+      if (deps.length > 0) {
+        const depRows = deps.map(d => {
+          const depTask = _tasks.find(t => t.id === d.to_task_id);
+          const label = depTask
+            ? `${_prefix}-${depTask.seq}: ${escHtml(depTask.title.length > 40 ? depTask.title.slice(0, 39) + '…' : depTask.title)}`
+            : escHtml(d.to_task_id.slice(-8));
+          return `<li class="stat-row"><span class="stat-label">${escHtml(d.dep_type || 'blocks')}</span><span class="stat-value">${label}</span></li>`;
+        }).join('');
+        container.innerHTML = `<ul style="list-style:none;padding:0">${depRows}</ul>`;
+      } else {
+        container.innerHTML = '<p class="text-muted">No dependencies.</p>';
+      }
     }
   } catch (_) {}
 }
@@ -551,6 +623,54 @@ async function _openDetail(taskId) {
 function _closeDetail() {
   _detail = null;
   _drawBoard();
+}
+
+async function _saveDetail() {
+  if (!_detail) return;
+  const payload = {};
+  const title = document.getElementById('detail-title')?.value.trim();
+  const description = document.getElementById('detail-description')?.value;
+  const type = document.getElementById('detail-type')?.value;
+  const priority = document.getElementById('detail-priority')?.value;
+  const status = document.getElementById('detail-status')?.value;
+  const estimateSize = document.getElementById('detail-estimate-size')?.value;
+  const hours = parseFloat(document.getElementById('detail-hours')?.value) || 0;
+  const due = document.getElementById('detail-due')?.value || '';
+  const parentId = document.getElementById('detail-parent')?.value || '';
+
+  if (title && title !== _detail.title) payload.title = title;
+  if (description !== (_detail.description || '')) payload.description = description;
+  if (type !== (_detail.type || 'task')) payload.type = type;
+  if (priority !== _detail.priority) payload.priority = priority;
+  if (status !== _detail.status) payload.status = status;
+  if (estimateSize !== (_detail.estimate_size || '')) payload.estimate_size = estimateSize;
+  if (hours !== (_detail.estimate_hours || 0)) payload.estimate_hours = hours;
+  if (due !== (_detail.due_date || '')) payload.due_date = due;
+  if (parentId !== (_detail.parent_id || '')) payload.parent_id = parentId;
+
+  if (Object.keys(payload).length === 0) { _closeDetail(); return; }
+
+  try {
+    await api.patch(`/tasks/${_detail.id}`, payload);
+    const task = _tasks.find(t => t.id === _detail.id);
+    if (task) Object.assign(task, payload);
+    _closeDetail();
+  } catch (err) {
+    alert('Save failed: ' + (err.message || err));
+  }
+}
+
+async function _deleteDetail() {
+  if (!_detail) return;
+  const displayId = `${_prefix}-${_detail.seq}`;
+  if (!confirm(`Delete ${displayId}?`)) return;
+  try {
+    await api.del(`/tasks/${_detail.id}`);
+    _tasks = _tasks.filter(t => t.id !== _detail.id);
+    _closeDetail();
+  } catch (err) {
+    alert('Delete failed: ' + (err.message || err));
+  }
 }
 
 function _applyFilters(tasks) {
@@ -567,6 +687,25 @@ function _applyFilters(tasks) {
 function _staleDays(isoDate) {
   if (!isoDate) return 0;
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86400000);
+}
+
+function _getEpicName(task) {
+  if (!task.parent_id) return null;
+  const parent = _tasks.find(t => t.id === task.parent_id);
+  if (!parent) return null;
+  if (parent.type === 'epic') return parent.title;
+  if (parent.parent_id) {
+    const grandparent = _tasks.find(t => t.id === parent.parent_id);
+    if (grandparent && grandparent.type === 'epic') return grandparent.title;
+  }
+  return null;
+}
+
+function _getFeatureName(task) {
+  if (!task.parent_id || (task.type || 'task') !== 'task') return null;
+  const parent = _tasks.find(t => t.id === task.parent_id);
+  if (parent && (parent.type || 'task') === 'feature') return parent.title;
+  return null;
 }
 
 return renderKanban;

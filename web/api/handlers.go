@@ -38,6 +38,7 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	// Tasks
 	mux.HandleFunc("GET /api/tasks/{id}", cors(h.getTask))
 	mux.HandleFunc("PATCH /api/tasks/{id}", cors(h.updateTask))
+	mux.HandleFunc("DELETE /api/tasks/{id}", cors(h.deleteTask))
 	mux.HandleFunc("GET /api/tasks/{id}/deps", cors(h.getDeps))
 	mux.HandleFunc("POST /api/tasks/{id}/deps", cors(h.createDep))
 	mux.HandleFunc("DELETE /api/tasks/{id}/deps/{targetId}", cors(h.deleteDep))
@@ -88,7 +89,7 @@ func addCORSHeaders(w http.ResponseWriter) {
 func addSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com")
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com")
 }
 
 // handler holds the shared DB connection for all route handlers.
@@ -411,7 +412,14 @@ type updateTaskRequest struct {
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
 	// Pointer so an explicit "" can clear the due date (omitted = leave unchanged).
-	DueDate *string `json:"due_date"`
+	DueDate          *string `json:"due_date"`
+	Description      string  `json:"description"`
+	Type             string  `json:"type"`
+	EstimateSize     string  `json:"estimate_size"`
+	EstimateHours    float64 `json:"estimate_hours"`
+	EstimateAgentMin int     `json:"estimate_agent_minutes"`
+	SortOrder        int     `json:"sort_order"`
+	Tags             string  `json:"tags"`
 }
 
 func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
@@ -474,12 +482,70 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if req.Description != "" {
+		if err := db.UpdateTaskField(h.conn, id, "description", req.Description); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.Type != "" {
+		if err := db.UpdateTaskField(h.conn, id, "type", req.Type); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.EstimateSize != "" {
+		if err := db.UpdateTaskField(h.conn, id, "estimate_size", req.EstimateSize); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.EstimateHours > 0 {
+		if err := db.UpdateTaskField(h.conn, id, "estimate_hours", strconv.FormatFloat(req.EstimateHours, 'f', -1, 64)); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.EstimateAgentMin > 0 {
+		if err := db.UpdateTaskField(h.conn, id, "estimate_agent_minutes", strconv.Itoa(req.EstimateAgentMin)); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.SortOrder > 0 {
+		if err := db.UpdateTaskField(h.conn, id, "sort_order", strconv.Itoa(req.SortOrder)); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
+	if req.Tags != "" {
+		if err := db.UpdateTaskField(h.conn, id, "tags", req.Tags); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+
 	task, err := db.GetTask(h.conn, id)
 	if err != nil {
 		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, task)
+}
+
+func (h *handler) deleteTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := db.DeleteTask(h.conn, id); err != nil {
+		writeServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
 // --- dependency handlers ---

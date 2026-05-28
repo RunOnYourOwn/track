@@ -27,6 +27,7 @@ const STATUS_COLORS = {
 let _prefix = '';
 let _tasks = [];
 let _sprints = [];
+let _expandedEpics = {};
 let _expandedFeatures = {};
 let _showDone = false;
 
@@ -61,54 +62,93 @@ async function renderTimeline(prefix) {
 function _renderTimeline() {
   const activeTasks = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done');
 
-  // Build feature list (primary rows) sorted by priority then seq
-  const features = activeTasks
-    .filter(t => (t.type || 'task') === 'feature')
-    .sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    });
+  const _sortByPriority = (a, b) => {
+    const pa = PRIORITY_ORDER[a.priority] ?? 99;
+    const pb = PRIORITY_ORDER[b.priority] ?? 99;
+    if (pa !== pb) return pa - pb;
+    return (a.seq ?? 0) - (b.seq ?? 0);
+  };
 
-  // Map tasks to their parent feature (not epic — epics are milestones, not board groups)
-  const epicIds = new Set(activeTasks.filter(t => t.type === 'epic').map(t => t.id));
-  const tasksByParent = {};
-  activeTasks.filter(t => (t.type || 'task') === 'task' && t.parent_id && !epicIds.has(t.parent_id)).forEach(t => {
-    if (!tasksByParent[t.parent_id]) tasksByParent[t.parent_id] = [];
-    tasksByParent[t.parent_id].push(t);
+  // Build hierarchy: Epic → Feature → Task
+  const epics = activeTasks.filter(t => t.type === 'epic').sort(_sortByPriority);
+  const features = activeTasks.filter(t => (t.type || 'task') === 'feature').sort(_sortByPriority);
+  const tasks = activeTasks.filter(t => (t.type || 'task') === 'task');
+
+  const epicIds = new Set(epics.map(t => t.id));
+  const featureIds = new Set(features.map(t => t.id));
+
+  // Group features by parent epic
+  const featuresByEpic = {};
+  const orphanFeatures = [];
+  features.forEach(f => {
+    if (f.parent_id && epicIds.has(f.parent_id)) {
+      if (!featuresByEpic[f.parent_id]) featuresByEpic[f.parent_id] = [];
+      featuresByEpic[f.parent_id].push(f);
+    } else {
+      orphanFeatures.push(f);
+    }
   });
 
-  // Build visible rows
+  // Group tasks by parent feature OR directly by parent epic
+  const tasksByFeature = {};
+  const tasksByEpic = {};
+  const orphanTasks = [];
+  tasks.forEach(t => {
+    if (t.parent_id && featureIds.has(t.parent_id)) {
+      if (!tasksByFeature[t.parent_id]) tasksByFeature[t.parent_id] = [];
+      tasksByFeature[t.parent_id].push(t);
+    } else if (t.parent_id && epicIds.has(t.parent_id)) {
+      if (!tasksByEpic[t.parent_id]) tasksByEpic[t.parent_id] = [];
+      tasksByEpic[t.parent_id].push(t);
+    } else {
+      orphanTasks.push(t);
+    }
+  });
+  Object.values(tasksByFeature).forEach(arr => arr.sort(_sortByPriority));
+  Object.values(tasksByEpic).forEach(arr => arr.sort(_sortByPriority));
+  orphanTasks.sort(_sortByPriority);
+
+  // Build visible rows with 3-level nesting
   const rows = [];
-  features.forEach(feat => {
-    const children = (tasksByParent[feat.id] || []).sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    });
+
+  function _addFeatureRow(feat, indent) {
+    const children = (tasksByFeature[feat.id] || []);
     const doneCount = children.filter(t => t.status === 'done').length;
-    rows.push({ type: 'feature', task: feat, childCount: children.length, doneCount });
+    rows.push({ type: 'feature', task: feat, childCount: children.length, doneCount, indent });
     if (_expandedFeatures[feat.id]) {
       children.forEach(child => {
-        rows.push({ type: 'task', task: child, indent: true });
+        rows.push({ type: 'task', task: child, indent: indent + 1 });
+      });
+    }
+  }
+
+  // Epics with their features and tasks
+  // Non-done epics default to expanded (user can collapse); done epics default to collapsed
+  epics.forEach(epic => {
+    const epicFeatures = (featuresByEpic[epic.id] || []);
+    const epicDirectTasks = (tasksByEpic[epic.id] || []);
+    const featureDescendants = epicFeatures.flatMap(f => tasksByFeature[f.id] || []);
+    const allDescendants = [...featureDescendants, ...epicDirectTasks];
+    const doneCount = allDescendants.filter(t => t.status === 'done').length;
+    rows.push({ type: 'epic', task: epic, childCount: allDescendants.length, doneCount, indent: 0 });
+    const isExpanded = _expandedEpics[epic.id] !== undefined
+      ? _expandedEpics[epic.id]
+      : epic.status !== 'done';
+    if (isExpanded) {
+      epicFeatures.forEach(feat => _addFeatureRow(feat, 1));
+      epicDirectTasks.forEach(t => {
+        rows.push({ type: 'task', task: t, indent: 1 });
       });
     }
   });
 
-  // Also include orphan tasks and epic-parented tasks at the bottom
-  const orphans = activeTasks.filter(t => (t.type || 'task') === 'task' && (!t.parent_id || epicIds.has(t.parent_id)));
-  if (orphans.length > 0) {
-    orphans.sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    }).forEach(t => {
-      rows.push({ type: 'task', task: t, indent: false });
-    });
-  }
+  // Orphan features (not under any epic)
+  orphanFeatures.forEach(feat => _addFeatureRow(feat, 0));
+
+  // Orphan tasks (not under any feature)
+  orphanTasks.forEach(t => {
+    rows.push({ type: 'task', task: t, indent: 0 });
+  });
 
   // Determine time range — keep it tight around actual data
   const allDates = _tasks.map(t => new Date(t.created_at));
@@ -264,6 +304,7 @@ function _renderTimeline() {
   // Row backgrounds + left panel labels
   rows.forEach((row, i) => {
     const y = i * ROW_HEIGHT;
+    const indentPx = (row.indent || 0) * 20;
 
     // Alternating row bg
     if (i % 2 === 0) {
@@ -274,14 +315,55 @@ function _renderTimeline() {
     }
 
     // Left label
-    const labelX = row.indent ? 28 : 8;
+    const labelX = 8 + indentPx;
     const labelG = svg.append('g')
       .attr('transform', `translate(${labelX}, ${HEADER_HEIGHT + y})`)
-      .style('cursor', row.type === 'feature' ? 'pointer' : 'default');
+      .style('cursor', (row.type === 'epic' || row.type === 'feature') ? 'pointer' : 'default');
 
     const isNarrow = LEFT_PANEL_WIDTH < 200;
 
-    if (row.type === 'feature') {
+    if (row.type === 'epic') {
+      const hasChildren = row.childCount > 0;
+      const expanded = _expandedEpics[row.task.id] !== undefined
+        ? _expandedEpics[row.task.id]
+        : row.task.status !== 'done';
+
+      labelG.append('text')
+        .attr('x', 0).attr('y', ROW_HEIGHT / 2)
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', '#d29922')
+        .attr('font-size', '10px')
+        .text(expanded ? '▾' : '▸');
+
+      const maxChars = isNarrow ? 12 : 26;
+      labelG.append('text')
+        .attr('x', 16).attr('y', ROW_HEIGHT / 2)
+        .attr('dominant-baseline', 'middle')
+        .attr('fill', '#e0e0e0')
+        .attr('font-size', isNarrow ? '12px' : '14px')
+        .attr('font-weight', '700')
+        .text(_truncLabel(row.task.title, maxChars));
+
+      if (hasChildren) {
+        const badge = `${row.doneCount}/${row.childCount}`;
+        labelG.append('text')
+          .attr('x', LEFT_PANEL_WIDTH - labelX - 8).attr('y', ROW_HEIGHT / 2)
+          .attr('dominant-baseline', 'middle')
+          .attr('text-anchor', 'end')
+          .attr('fill', row.doneCount === row.childCount ? '#3fb950' : '#707070')
+          .attr('font-size', '11px')
+          .text(badge);
+      }
+
+      labelG.on('click', () => {
+        const currentlyExpanded = _expandedEpics[row.task.id] !== undefined
+          ? _expandedEpics[row.task.id]
+          : row.task.status !== 'done';
+        _expandedEpics[row.task.id] = !currentlyExpanded;
+        _renderTimeline();
+      });
+
+    } else if (row.type === 'feature') {
       const hasChildren = row.childCount > 0;
       const expanded = !!_expandedFeatures[row.task.id];
 
@@ -294,7 +376,7 @@ function _renderTimeline() {
           .text(expanded ? '▾' : '▸');
       }
 
-      const maxChars = isNarrow ? (hasChildren ? 14 : 16) : (hasChildren ? 28 : 34);
+      const maxChars = isNarrow ? (hasChildren ? 12 : 14) : (hasChildren ? 24 : 30);
       labelG.append('text')
         .attr('x', hasChildren ? 16 : 0).attr('y', ROW_HEIGHT / 2)
         .attr('dominant-baseline', 'middle')
@@ -303,7 +385,6 @@ function _renderTimeline() {
         .attr('font-weight', '500')
         .text(_truncLabel(row.task.title, maxChars));
 
-      // Progress badge
       if (hasChildren) {
         const badge = `${row.doneCount}/${row.childCount}`;
         labelG.append('text')
@@ -321,18 +402,32 @@ function _renderTimeline() {
       });
     } else {
       // Task row
-      const taskMaxChars = isNarrow ? (row.indent ? 12 : 16) : (row.indent ? 28 : 34);
+      const availChars = isNarrow ? Math.max(8, 16 - (row.indent || 0) * 3) : Math.max(16, 34 - (row.indent || 0) * 4);
       labelG.append('text')
         .attr('x', 0).attr('y', ROW_HEIGHT / 2)
         .attr('dominant-baseline', 'middle')
-        .attr('fill', row.indent ? '#999' : '#ccc')
-        .attr('font-size', row.indent ? (isNarrow ? '9px' : '11px') : (isNarrow ? '10px' : '12px'))
-        .text(_truncLabel(row.task.title, taskMaxChars));
+        .attr('fill', (row.indent || 0) > 0 ? '#999' : '#ccc')
+        .attr('font-size', (row.indent || 0) > 0 ? (isNarrow ? '9px' : '11px') : (isNarrow ? '10px' : '12px'))
+        .text(_truncLabel(row.task.title, availChars));
     }
   });
 
   // Task bars
   const priorityColors = { urgent: '#f85149', high: '#d29922', medium: '#58a6ff', low: '#484f58' };
+
+  function _getDescendantRange(parentId, depth) {
+    const directChildren = _tasks.filter(c => c.parent_id === parentId);
+    let allStarts = directChildren.map(c => new Date(c.created_at));
+    let allEnds = directChildren.map(c => c.due_date ? new Date(c.due_date) : _addDays(new Date(c.created_at), 5));
+    if (depth < 3) {
+      directChildren.forEach(c => {
+        const sub = _getDescendantRange(c.id, depth + 1);
+        if (sub) { allStarts.push(sub.start); allEnds.push(sub.end); }
+      });
+    }
+    if (allStarts.length === 0) return null;
+    return { start: d3.min(allStarts), end: d3.max(allEnds) };
+  }
 
   rows.forEach((row, i) => {
     const t = row.task;
@@ -341,28 +436,32 @@ function _renderTimeline() {
 
     let start, end;
 
-    if (row.type === 'feature' && row.childCount > 0) {
-      // Feature bar spans its child tasks' range
-      const children = _tasks.filter(c => c.parent_id === t.id);
-      const childStarts = children.map(c => new Date(c.created_at));
-      const childEnds = children.map(c => c.due_date ? new Date(c.due_date) : _addDays(new Date(c.created_at), 5));
-      start = d3.min(childStarts) || new Date(t.created_at);
-      end = d3.max(childEnds) || _addDays(start, 7);
+    if ((row.type === 'epic' || row.type === 'feature') && row.childCount > 0) {
+      const range = _getDescendantRange(t.id, 0);
+      start = range ? range.start : new Date(t.created_at);
+      end = range ? range.end : _addDays(start, 7);
     } else {
       start = new Date(t.created_at);
       if (t.due_date) {
         end = new Date(t.due_date);
         if (end <= start) end = _addDays(start, 1);
       } else {
-        const days = row.type === 'feature' ? 7 : 5;
+        const days = row.type === 'epic' ? 14 : row.type === 'feature' ? 7 : 5;
         end = _addDays(start, days);
       }
     }
 
     const barX = x(start);
     const barW = Math.max(6, x(end) - x(start));
-    const progress = t.status === 'done' ? 1 : t.status === 'in_progress' ? 0.5 : 0;
     const colors = STATUS_COLORS[t.status] || STATUS_COLORS.todo;
+
+    // Progress: for parent rows use child completion ratio, for tasks use status
+    let progress;
+    if ((row.type === 'epic' || row.type === 'feature') && row.childCount > 0) {
+      progress = row.doneCount / row.childCount;
+    } else {
+      progress = t.status === 'done' ? 1 : t.status === 'in_progress' ? 0.5 : 0;
+    }
 
     // Background bar
     chartG.append('rect')

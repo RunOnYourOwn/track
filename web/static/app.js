@@ -358,12 +358,78 @@ async function renderDashboard() {
           <div class="page-title">Dashboard</div>
           <div class="page-subtitle">${projects.length} project${projects.length !== 1 ? 's' : ''}</div>
         </div>
+        <button class="tt-modal-btn primary" id="btn-create-project">+ New Project</button>
       </div>
       ${alertsHtml}
       <div class="dashboard-grid">${cardsHtml}</div>
       ${blockersHtml}
     </div>
   `);
+
+  document.getElementById('btn-create-project')?.addEventListener('click', _openCreateProject);
+}
+
+function _openCreateProject() {
+  const overlay = document.createElement('div');
+  overlay.className = 'tt-modal-overlay';
+  overlay.id = 'create-project-overlay';
+  overlay.innerHTML = `
+    <div class="tt-modal" role="dialog" aria-label="Create project">
+      <div class="tt-modal-title">New Project</div>
+      <div class="tt-modal-field">
+        <label class="tt-modal-label">Prefix (3-4 uppercase letters)</label>
+        <input class="tt-modal-input" id="cp-prefix" placeholder="MVN" maxlength="5" style="text-transform:uppercase">
+      </div>
+      <div class="tt-modal-field">
+        <label class="tt-modal-label">Name</label>
+        <input class="tt-modal-input" id="cp-name" placeholder="Project Name">
+      </div>
+      <div class="tt-modal-row">
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Phase Type</label>
+          <select class="tt-modal-input" id="cp-phase-type">
+            <option value="build">Build</option>
+            <option value="discovery">Discovery</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">WIP Limit</label>
+          <input class="tt-modal-input" id="cp-wip" type="number" value="5" min="1" max="20">
+        </div>
+      </div>
+      <div class="tt-modal-actions">
+        <div></div>
+        <div style="display:flex;gap:8px;">
+          <button class="tt-modal-btn" id="cp-cancel">Cancel</button>
+          <button class="tt-modal-btn primary" id="cp-create">Create</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('cp-cancel').addEventListener('click', () => overlay.remove());
+  document.getElementById('cp-create').addEventListener('click', async () => {
+    const prefix = document.getElementById('cp-prefix').value.trim().toUpperCase();
+    const name = document.getElementById('cp-name').value.trim();
+    const phaseType = document.getElementById('cp-phase-type').value;
+    const wipLimit = parseInt(document.getElementById('cp-wip').value) || 5;
+
+    if (!prefix || !name) { alert('Prefix and Name are required.'); return; }
+    if (prefix.length < 2 || prefix.length > 5) { alert('Prefix must be 2-5 characters.'); return; }
+
+    try {
+      await api.post('/projects', { prefix, name, phase_type: phaseType, wip_limit: wipLimit });
+      overlay.remove();
+      renderDashboard();
+    } catch (err) {
+      alert('Failed to create project: ' + (err.message || err));
+    }
+  });
+
+  document.getElementById('cp-prefix').focus();
 }
 
 // =========================================================
