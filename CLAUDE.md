@@ -11,6 +11,27 @@ CLI + web UI for local project management. Single Go binary, SQLite database, no
 - Build: `make build` (outputs to bin/)
 - Cross-compile: `make release` (darwin-arm64, windows-amd64)
 
+### Running the local server (read this before debugging "the UI looks wrong")
+
+The single binary **embeds `web/static/` (the whole frontend) AND the API routes
+at compile time** (`web/embed.go`). A running `track serve` keeps serving the
+exact build it was started from — editing `web/static/` or any Go file has **no
+effect on a live server**. After ANY change (Go or static), you must **rebuild
+AND restart**:
+
+```bash
+go build -o track .   # or: make build
+# stop the running instance, then start the new one:
+kill "$(cat ~/.track/track.pid)" 2>/dev/null; ./track serve
+```
+
+`track serve` daemonizes by default (PID in `~/.track/track.pid`, logs in
+`~/.track/track.log`); pass `--foreground` to run inline. **Symptom of a stale
+binary:** a newly added `/api/...` route returns the SPA's `index.html` instead
+of JSON (the unmatched path falls through to the `GET /` catch-all), or a page
+renders pre-fix behavior. When something looks inaccurate in the browser, first
+confirm the server was rebuilt + restarted after the change.
+
 ## Structure
 ```
 cmd/           — CLI commands (one file per subcommand)
@@ -38,7 +59,8 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 - Schema changes: add to the `schema` const in `internal/db/db.go` (auto-migrates on serve)
 - New commands: add file in `cmd/`, register in `cmd/root.go`
 - Tests: table-driven, use real SQLite (in-memory `:memory:`)
-- Web static files: edit in `web/static/`, recompile to pick up changes
+- Web static files: edit in `web/static/`, then rebuild AND restart the server
+  to pick up changes (the binary embeds them — see "Running the local server")
 - Skills stay in sync with the code: whenever you change CLI commands, flags, MCP
   tools, or workflow behavior, check every skill that references them and update
   it — in BOTH the repo's `skills/` (the source) and the deployed copies under
