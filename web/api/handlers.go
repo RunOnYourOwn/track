@@ -772,10 +772,11 @@ type taskCounts struct {
 }
 
 type dashboardProject struct {
-	Prefix string     `json:"prefix"`
-	Name   string     `json:"name"`
-	Phase  string     `json:"phase"`
-	Counts taskCounts `json:"counts"`
+	Prefix      string     `json:"prefix"`
+	Name        string     `json:"name"`
+	Phase       string     `json:"phase"`
+	Counts      taskCounts `json:"counts"`
+	HealthScore int        `json:"health_score"`
 }
 
 type dashboardResponse struct {
@@ -820,11 +821,15 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		counts.Blocked = len(openBlockers)
 
+		proj := p
+		score, _ := db.ComputeHealth(&proj, tasks, p.Prefix)
+
 		result.Projects = append(result.Projects, dashboardProject{
-			Prefix: p.Prefix,
-			Name:   p.Name,
-			Phase:  p.Phase,
-			Counts: counts,
+			Prefix:      p.Prefix,
+			Name:        p.Name,
+			Phase:       p.Phase,
+			Counts:      counts,
+			HealthScore: score,
 		})
 	}
 

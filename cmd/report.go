@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -42,115 +41,8 @@ type projectStats struct {
 	HealthScore int            `json:"health_score"`
 }
 
-// ---------------------------------------------------------------------------
-// Health calculation
-// ---------------------------------------------------------------------------
-
-type healthFactors struct {
-	BlockerFree      bool
-	WIPOk            bool
-	MakingProgress   bool
-	NoStale          bool    // no tasks stale > 14 days
-	EstAccuracy      bool    // > 70% estimation accuracy
-	StaleTaskIDs     []string
-	WIPCurrent       int
-	WIPLimit         int
-	DoneThisWeek     int
-	AccuracyPct      float64
-	PartialAccuracy  float64 // 0-20 for partial scoring
-}
-
-// computeHealth calculates a 0-100 health score (5 factors × 20 pts each).
-// A factor with partial progress (e.g. accuracy) scores proportionally.
-func computeHealth(proj *models.Project, tasks []models.Task, prefix string) (int, healthFactors) {
-	var f healthFactors
-	f.WIPLimit = proj.WIPLimit
-	if f.WIPLimit == 0 {
-		f.WIPLimit = 3
-	}
-
-	now := time.Now()
-	weekAgo := now.Add(-7 * 24 * time.Hour)
-	staleThreshold := now.Add(-14 * 24 * time.Hour)
-
-	var wipCount, blockedCount, doneCount int
-	var totalEst, totalAct float64
-	var estimatedPairs int
-
-	for _, t := range tasks {
-		switch {
-		case t.Status == "in_progress":
-			wipCount++
-			if t.UpdatedAt.Before(staleThreshold) {
-				f.StaleTaskIDs = append(f.StaleTaskIDs, t.DisplayID(prefix)+
-					" stale "+strconv.Itoa(int(now.Sub(t.UpdatedAt).Hours()/24))+" days")
-			}
-		case t.Status == "blocked":
-			blockedCount++
-		case strings.HasPrefix(t.Status, "waiting"):
-			blockedCount++
-		case t.Status == "done":
-			doneCount++
-			if t.CompletedAt != nil && t.CompletedAt.After(weekAgo) {
-				f.DoneThisWeek++
-			}
-			if t.EstimateHours > 0 && t.ActualHours > 0 {
-				totalEst += t.EstimateHours
-				totalAct += t.ActualHours
-				estimatedPairs++
-			}
-		case t.Status == "todo":
-			if t.UpdatedAt.Before(staleThreshold) {
-				f.StaleTaskIDs = append(f.StaleTaskIDs, t.DisplayID(prefix)+
-					" stale "+strconv.Itoa(int(now.Sub(t.UpdatedAt).Hours()/24))+" days")
-			}
-		}
-	}
-
-	f.WIPCurrent = wipCount
-	f.BlockerFree = blockedCount == 0
-	f.WIPOk = wipCount <= f.WIPLimit
-	f.MakingProgress = f.DoneThisWeek > 0 || doneCount > 0
-	f.NoStale = len(f.StaleTaskIDs) == 0
-
-	// Estimation accuracy
-	if estimatedPairs > 0 {
-		var accuracySum float64
-		// Re-scan done tasks for per-task accuracy
-		for _, t := range tasks {
-			if t.Status == "done" && t.EstimateHours > 0 && t.ActualHours > 0 {
-				acc := math.Min(t.EstimateHours, t.ActualHours) / math.Max(t.EstimateHours, t.ActualHours)
-				accuracySum += acc
-			}
-		}
-		f.AccuracyPct = (accuracySum / float64(estimatedPairs)) * 100
-		_ = totalEst
-		_ = totalAct
-	}
-	f.EstAccuracy = f.AccuracyPct >= 70
-
-	score := 0
-	if f.BlockerFree {
-		score += 20
-	}
-	if f.WIPOk {
-		score += 20
-	}
-	if f.MakingProgress {
-		score += 20
-	}
-	if f.NoStale {
-		score += 20
-	}
-	// Accuracy: partial score proportional to accuracy, max 20
-	if estimatedPairs > 0 {
-		accScore := int(math.Min(f.AccuracyPct/100.0*20, 20))
-		score += accScore
-		f.PartialAccuracy = float64(accScore)
-	}
-
-	return score, f
-}
+// Health scoring lives in internal/db (db.ComputeHealth / db.HealthFactors) so
+// the CLI report and the web dashboard share one implementation.
 
 func healthDots(score int) string {
 	// 5 dots; each dot represents 20 points
@@ -200,14 +92,14 @@ var statusCmd = &cobra.Command{
 						blocked++
 					}
 				}
-				score, _ := computeHealth(&proj, tasks, proj.Prefix)
+				score, _ := db.ComputeHealth(&proj, tasks, proj.Prefix)
 				rows = append(rows, projectStats{
-					Project:    proj,
-					Total:      len(tasks),
-					Done:       done,
-					InProgress: wip,
-					Todo:       todo,
-					Blocked:    blocked,
+					Project:     proj,
+					Total:       len(tasks),
+					Done:        done,
+					InProgress:  wip,
+					Todo:        todo,
+					Blocked:     blocked,
 					HealthScore: score,
 				})
 			}
@@ -250,7 +142,7 @@ var statusCmd = &cobra.Command{
 			return err
 		}
 
-		score, _ := computeHealth(proj, allTasks, proj.Prefix)
+		score, _ := db.ComputeHealth(proj, allTasks, proj.Prefix)
 
 		if jsonOutput {
 			type detailOut struct {
@@ -479,12 +371,12 @@ var healthCmd = &cobra.Command{
 			return err
 		}
 
-		score, f := computeHealth(proj, tasks, proj.Prefix)
+		score, f := db.ComputeHealth(proj, tasks, proj.Prefix)
 
 		if jsonOutput {
 			type jsonHealth struct {
-				Score        int          `json:"score"`
-				Factors      healthFactors `json:"factors"`
+				Score   int              `json:"score"`
+				Factors db.HealthFactors `json:"factors"`
 			}
 			return json.NewEncoder(os.Stdout).Encode(jsonHealth{Score: score, Factors: f})
 		}
@@ -605,7 +497,7 @@ var snapshotCmd = &cobra.Command{
 			}
 		}
 
-		score, _ := computeHealth(proj, tasks, proj.Prefix)
+		score, _ := db.ComputeHealth(proj, tasks, proj.Prefix)
 		healthScore := float64(score)
 
 		flowEfficiency, err := db.ComputeFlowEfficiency(conn, proj.ID)
