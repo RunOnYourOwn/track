@@ -55,8 +55,9 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	// Sessions
 	mux.HandleFunc("GET /api/sessions/{id}/stats", cors(h.getSessionStats))
 
-	// Dashboard
+	// Dashboard + insights
 	mux.HandleFunc("GET /api/dashboard", cors(h.dashboard))
+	mux.HandleFunc("GET /api/insights", cors(h.insights))
 
 	// Handle OPTIONS preflight for all /api/ paths.
 	mux.HandleFunc("OPTIONS /api/", func(w http.ResponseWriter, r *http.Request) {
@@ -827,6 +828,24 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (h *handler) insights(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			days = n
+		}
+	}
+	data, err := db.ComputeInsights(h.conn, days)
+	if err != nil {
+		writeServerError(w, err)
+		return
+	}
+	if data == nil {
+		data = []db.ProjectInsights{}
+	}
+	writeJSON(w, http.StatusOK, data)
 }
 
 // --- sprint handlers ---
