@@ -9,7 +9,7 @@ const BAR_HEIGHT = 34;
 const BAR_GAP = 8;
 const ROW_HEIGHT = BAR_HEIGHT + BAR_GAP;
 const HEADER_HEIGHT = 56;
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+// PRIORITY_ORDER is a shared global from app.js.
 
 function _getLeftPanelWidth() {
   return window.innerWidth < 600 ? 140 : 300;
@@ -62,12 +62,7 @@ async function renderTimeline(prefix) {
 function _renderTimeline() {
   const activeTasks = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done');
 
-  const _sortByPriority = (a, b) => {
-    const pa = PRIORITY_ORDER[a.priority] ?? 99;
-    const pb = PRIORITY_ORDER[b.priority] ?? 99;
-    if (pa !== pb) return pa - pb;
-    return (a.seq ?? 0) - (b.seq ?? 0);
-  };
+  const _sortByPriority = byPriority; // shared comparator from app.js
 
   // Build hierarchy: Epic → Feature → Task
   const epics = activeTasks.filter(t => t.type === 'epic').sort(_sortByPriority);

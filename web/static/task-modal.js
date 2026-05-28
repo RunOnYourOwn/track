@@ -12,7 +12,7 @@ var openTaskModal = (function () {
 
   const TYPES = ['epic', 'feature', 'task'];
   const PRIORITIES = ['urgent', 'high', 'medium', 'low'];
-  const STATUSES = ['todo', 'in_progress', 'done', 'blocked', 'waiting_external', 'waiting_decision', 'waiting_feedback'];
+  // STATUSES is a shared global from app.js (canonical, server-aligned).
   const SIZES = ['', 'XS', 'S', 'M', 'L', 'XL'];
 
   let _overlay = null;

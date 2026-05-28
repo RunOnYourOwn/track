@@ -16,7 +16,7 @@ let _menuOpen = null; // task id with open action menu
 
 const TYPES = ['epic', 'feature', 'task'];
 const PRIORITIES = ['urgent', 'high', 'medium', 'low'];
-const STATUSES = ['todo', 'in_progress', 'done', 'blocked', 'waiting_external', 'waiting_decision', 'waiting_feedback'];
+// STATUSES and PRIORITY_ORDER are shared globals from app.js.
 const SIZES = ['', 'XS', 'S', 'M', 'L', 'XL'];
 
 async function renderTree(prefix) {
@@ -98,14 +98,13 @@ function _buildRows() {
   });
 
   const typeOrder = { epic: 0, feature: 1, task: 2 };
-  const priOrder = { urgent: 0, high: 1, medium: 2, low: 3 };
   const sortFn = (a, b) => {
     if ((a.sort_order || 0) !== (b.sort_order || 0)) return (a.sort_order || 0) - (b.sort_order || 0);
     const ta = typeOrder[(a.type || 'task')] ?? 2;
     const tb = typeOrder[(b.type || 'task')] ?? 2;
     if (ta !== tb) return ta - tb;
-    const pa = priOrder[a.priority] ?? 2;
-    const pb = priOrder[b.priority] ?? 2;
+    const pa = PRIORITY_ORDER[a.priority] ?? 2;
+    const pb = PRIORITY_ORDER[b.priority] ?? 2;
     if (pa !== pb) return pa - pb;
     return (a.seq || 0) - (b.seq || 0);
   };
