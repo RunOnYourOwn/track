@@ -363,7 +363,8 @@ func SetParentID(d *sql.DB, id, parentID string) error {
 var allowedTaskFields = map[string]bool{
 	"title": true, "description": true, "type": true, "priority": true,
 	"agent_context": true, "due_date": true, "sort_order": true,
-	"estimate_size": true, "estimate_hours": true, "actual_hours": true, "tags": true,
+	"estimate_size": true, "estimate_hours": true, "estimate_agent_minutes": true,
+	"actual_hours": true, "tags": true,
 }
 
 func UpdateTaskField(d *sql.DB, id, field, value string) error {
