@@ -28,11 +28,11 @@ const COLUMN_DROP_STATUS = {
 function _columnIdForStatus(status) {
   if (status === 'done') return 'done';
   if (status === 'in_progress') return 'in_progress';
-  if (status && status.indexOf('waiting') === 0) return 'waiting';
+  if (isWaiting(status)) return 'waiting';
   return 'todo';
 }
 
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+// PRIORITY_ORDER / byPriority / isWaiting are shared globals from app.js.
 const STALE_DAYS = 7;
 
 let _prefix = '';
@@ -94,7 +94,7 @@ function _statsBar() {
   if (total === 0) return '';
   const done = boardTasks.filter(t => t.status === 'done').length;
   const inProgress = boardTasks.filter(t => t.status === 'in_progress').length;
-  const waiting = boardTasks.filter(t => t.status.startsWith('waiting')).length;
+  const waiting = boardTasks.filter(t => isWaiting(t.status)).length;
   const blocked = boardTasks.filter(t => t.blocked).length;
   const todo = total - done - inProgress - waiting;
   const pct = Math.round((done / total) * 100);
@@ -164,12 +164,7 @@ function _renderColumn(col, tasks) {
   // Every leaf task (any nesting depth) is a card, placed by its OWN status.
   const colTasks = tasks
     .filter(t => (t.type || 'task') === 'task' && _columnIdForStatus(t.status) === col.id)
-    .sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    });
+    .sort(byPriority);
 
   const isInProgress = col.id === 'in_progress';
   const totalCards = colTasks.length;

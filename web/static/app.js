@@ -143,7 +143,21 @@ function priorityColor(p) {
 }
 
 const _validPriorities = new Set(['urgent', 'high', 'medium', 'low']);
-const _validStatuses = new Set(['todo', 'in_progress', 'done', 'blocked', 'waiting', 'waiting_review', 'waiting_external', 'waiting_dependency']);
+
+// Shared domain helpers — single source of truth across all views (app.js loads
+// first, so these globals are available to every view module).
+// Canonical task statuses; mirrors the server's validStatuses in internal/db/tasks.go.
+const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'waiting_review', 'waiting_external', 'waiting_dependency'];
+const _statusSet = new Set(STATUSES);
+const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+function isWaiting(s) { return typeof s === 'string' && s.indexOf('waiting') === 0; }
+
+// Sort already-fetched tasks for display: by priority rank, then seq.
+function byPriority(a, b) {
+  const d = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
+  return d !== 0 ? d : ((a.seq ?? 0) - (b.seq ?? 0));
+}
 
 function priorityBadge(p) {
   if (!p) return '';
@@ -154,7 +168,7 @@ function priorityBadge(p) {
 function statusBadge(s) {
   if (!s) return '';
   const label = s.replace(/_/g, ' ');
-  const cls = s.startsWith('waiting') ? 'waiting' : (_validStatuses.has(s) ? s : 'todo');
+  const cls = isWaiting(s) ? 'waiting' : (_statusSet.has(s) ? s : 'todo');
   return `<span class="status-badge ${cls}">${escHtml(label)}</span>`;
 }
 

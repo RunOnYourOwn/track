@@ -5,7 +5,7 @@
 var renderFocus = (function() {
 'use strict';
 
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+// PRIORITY_ORDER, byPriority, isWaiting are shared globals from app.js.
 
 let _prefix = '';
 let _tasks = [];
@@ -40,16 +40,11 @@ function _draw() {
 
   const inProgress = _tasks
     .filter(t => t.status === 'in_progress' && isWorkTask(t))
-    .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
+    .sort(byPriority);
 
   const queue = _tasks
     .filter(t => t.status === 'todo' && !t.blocked && isWorkTask(t))
-    .sort((a, b) => {
-      const pa = PRIORITY_ORDER[a.priority] ?? 99;
-      const pb = PRIORITY_ORDER[b.priority] ?? 99;
-      if (pa !== pb) return pa - pb;
-      return (a.seq ?? 0) - (b.seq ?? 0);
-    })
+    .sort(byPriority)
     .slice(0, 3);
 
   const recentDone = _tasks
@@ -61,7 +56,7 @@ function _draw() {
 
   // WIP summary
   const wipCount = inProgress.length;
-  const waiting = _tasks.filter(t => t.status.startsWith('waiting') && isWorkTask(t)).length;
+  const waiting = _tasks.filter(t => isWaiting(t.status) && isWorkTask(t)).length;
   html += `<div class="focus-wip-bar">
     <span class="focus-wip-active">${wipCount} active</span>
     ${waiting > 0 ? `<span class="focus-wip-waiting">${waiting} waiting</span>` : ''}
