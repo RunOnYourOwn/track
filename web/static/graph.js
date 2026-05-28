@@ -1,4 +1,6 @@
-// graph.js — DAG dependency graph with layered layout
+// graph.js — DAG dependency graph with layered layout.
+// Layering + critical path come from GET /api/projects/{prefix}/graph; this view
+// only does layout (within-layer ordering, coordinate math) and rendering.
 // Requires: d3 (v7) global, api global, render global, escHtml global
 
 var renderGraph = (function() {
@@ -6,7 +8,7 @@ var renderGraph = (function() {
 
 let _prefix = '';
 let _allTasks = [];
-let _allDeps = [];
+let _graph = { nodes: [], edges: [], max_layer: 0, has_cycle: false };
 let _showDone = false;
 
 async function renderGraph(prefix) {
@@ -35,16 +37,22 @@ async function renderGraph(prefix) {
     return;
   }
 
-  const depResults = await Promise.allSettled(
-    _allTasks.map(t => api.get(`/tasks/${t.id}/deps`))
-  );
-  _allDeps = [];
-  depResults.forEach(r => {
-    if (r.status === 'fulfilled' && Array.isArray(r.value)) {
-      _allDeps.push(...r.value);
-    }
-  });
+  await _loadGraph();
+  _drawGraph();
+}
 
+// Fetch the server-computed layers + critical path for the current done filter.
+async function _loadGraph() {
+  try {
+    _graph = await api.get(`/projects/${_prefix}/graph?include_done=${_showDone}`);
+  } catch (e) {
+    _graph = { nodes: [], edges: [], max_layer: 0, has_cycle: false };
+  }
+}
+
+// Re-fetch (the connected set/layering depend on the done filter) then redraw.
+async function _reloadGraph() {
+  await _loadGraph();
   _drawGraph();
 }
 
@@ -61,24 +69,14 @@ function _drawGraph() {
       <div id="graph-container"><div class="empty-state">No active tasks with dependencies.</div></div>
     </div>`);
     const showDoneEl = document.getElementById('graph-show-done');
-    if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _drawGraph(); });
+    if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
     return;
   }
 
-  const edgeKey = d => `${d.from_task_id}→${d.to_task_id}`;
-  const seen = new Set();
-  const edges = _allDeps.filter(d => {
-    const k = edgeKey(d);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-
+  // Edges, layers and critical path are computed server-side (the connected node
+  // set already reflects the done filter). The UI only lays them out.
+  const validEdges = _graph.edges.map(e => ({ from_task_id: e.from, to_task_id: e.to }));
   const taskById = new Map(tasks.map(t => [t.id, t]));
-  const validEdges = edges.filter(
-    d => taskById.has(d.from_task_id) && taskById.has(d.to_task_id)
-  );
-
   const doneCount = _allTasks.filter(t => t.status === 'done').length;
 
   if (validEdges.length === 0) {
@@ -92,46 +90,21 @@ function _drawGraph() {
       </div></div>
     </div>`);
     const showDoneEl = document.getElementById('graph-show-done');
-    if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _drawGraph(); });
+    if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
     return;
   }
 
-  // Only show connected tasks (nodes that appear in at least one edge)
-  const connectedIds = new Set();
-  validEdges.forEach(e => { connectedIds.add(e.from_task_id); connectedIds.add(e.to_task_id); });
+  const layer = new Map(_graph.nodes.map(n => [n.id, n.layer]));
+  const criticalPath = new Set(_graph.nodes.filter(n => n.critical).map(n => n.id));
+  const connectedIds = new Set(_graph.nodes.map(n => n.id));
   const connectedTasks = tasks.filter(t => connectedIds.has(t.id));
-
-  // Build adjacency for topological layering
-  const adj = new Map();      // id -> [successor ids]
-  const inDeg = new Map();    // id -> number of incoming edges
-  connectedTasks.forEach(t => { adj.set(t.id, []); inDeg.set(t.id, 0); });
-  validEdges.forEach(e => {
-    adj.get(e.from_task_id).push(e.to_task_id);
-    inDeg.set(e.to_task_id, (inDeg.get(e.to_task_id) || 0) + 1);
-  });
-
-  // Assign layers via longest-path (gives better spread than simple topo sort)
-  const layer = new Map();
-  const visiting = new Set();
-  function longestPath(id) {
-    if (layer.has(id)) return layer.get(id);
-    if (visiting.has(id)) { layer.set(id, 0); return 0; }
-    visiting.add(id);
-    const preds = validEdges.filter(e => e.to_task_id === id).map(e => e.from_task_id);
-    if (preds.length === 0) { layer.set(id, 0); visiting.delete(id); return 0; }
-    const maxPred = Math.max(...preds.map(p => longestPath(p)));
-    layer.set(id, maxPred + 1);
-    visiting.delete(id);
-    return maxPred + 1;
-  }
-  connectedTasks.forEach(t => longestPath(t.id));
 
   // Group tasks by parent feature for swimlane ordering within each layer
   const featureOrder = {};
   tasks.filter(t => (t.type || 'task') === 'feature').forEach((f, i) => { featureOrder[f.id] = i; });
 
   // Sort nodes within each layer by: feature group, then seq
-  const maxLayer = Math.max(...Array.from(layer.values()));
+  const maxLayer = _graph.max_layer;
   const layerNodes = [];
   for (let l = 0; l <= maxLayer; l++) {
     const nodesInLayer = connectedTasks
@@ -186,12 +159,13 @@ function _drawGraph() {
   render(`<div class="page-graph">
     <div class="timeline-toolbar">
       ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
+      ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;">⚠ dependency cycle detected</span>` : ''}
     </div>
     <div id="graph-container" style="position:relative;"></div>
   </div>`);
 
   const showDoneEl = document.getElementById('graph-show-done');
-  if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _drawGraph(); });
+  if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
 
   const container = document.getElementById('graph-container');
 
@@ -223,35 +197,6 @@ function _drawGraph() {
       .attr('rx', 6)
       .attr('fill', 'rgba(255,255,255,0.02)');
   });
-
-  // Compute critical path (longest chain through the DAG)
-  const criticalPath = new Set();
-  (function computeCriticalPath() {
-    // Find the node with highest layer value (deepest) — that's the end of the critical path
-    let deepestId = null;
-    let deepestLayer = -1;
-    connectedTasks.forEach(t => {
-      const l = layer.get(t.id);
-      if (l > deepestLayer) { deepestLayer = l; deepestId = t.id; }
-    });
-    if (!deepestId) return;
-
-    // Walk backward from deepest node, always choosing the predecessor with the highest layer
-    criticalPath.add(deepestId);
-    let current = deepestId;
-    while (true) {
-      const preds = validEdges.filter(e => e.to_task_id === current).map(e => e.from_task_id);
-      if (preds.length === 0) break;
-      let bestPred = preds[0];
-      let bestLayer = layer.get(bestPred) || 0;
-      preds.forEach(p => {
-        const pl = layer.get(p) || 0;
-        if (pl > bestLayer) { bestLayer = pl; bestPred = p; }
-      });
-      criticalPath.add(bestPred);
-      current = bestPred;
-    }
-  })();
 
   // Draw edges (curved paths)
   const edgeG = svg.append('g');
