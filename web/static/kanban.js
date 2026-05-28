@@ -115,7 +115,7 @@ function _statsBar() {
         ${blocked > 0 ? `<span class="stat-chip blocked">${blocked} blocked</span>` : ''}
         <span class="stat-chip todo">${todo} backlog</span>
         <span class="stat-chip total">${total} total</span>
-        <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 5) ? 'wip-over' : ''}" id="stats-wip-chip" title="Click to set WIP limit — controls max items in progress">WIP: ${inProgress}/${(_project && _project.wip_limit) || 5}</span>
+        <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 3) ? 'wip-over' : ''}" id="stats-wip-chip" title="Click to set WIP limit — controls max items in progress">WIP: ${inProgress}/${(_project && _project.wip_limit) || 3}</span>
       </div>
     </div>
   `;
@@ -173,7 +173,7 @@ function _renderColumn(col, tasks) {
 
   const isInProgress = col.id === 'in_progress';
   const totalCards = colTasks.length;
-  const wipLimit = (_project && _project.wip_limit) || 5;
+  const wipLimit = (_project && _project.wip_limit) || 3;
   const wip = isInProgress && totalCards >= wipLimit;
   const classes = ['kanban-column', wip ? 'wip-warning' : ''].filter(Boolean).join(' ');
 
@@ -284,7 +284,7 @@ function _attachBoardListeners() {
   document.querySelectorAll('#wip-limit-display, #stats-wip-chip').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const current = (_project && _project.wip_limit) || 5;
+      const current = (_project && _project.wip_limit) || 3;
       const input = prompt('WIP limit for In Progress:', current);
       if (input === null) return;
       const val = parseInt(input, 10);
@@ -350,7 +350,7 @@ async function _onDrop(e) {
 
   // Enforce WIP limit on In Progress
   if (targetCol === 'in_progress') {
-    const wipLimit = (_project && _project.wip_limit) || 5;
+    const wipLimit = (_project && _project.wip_limit) || 3;
     const currentWip = _tasks.filter(t => t.status === 'in_progress' && (t.type || 'task') === 'task').length;
     if (currentWip >= wipLimit) {
       alert(`WIP limit reached (${wipLimit}). Complete or move an item before starting new work.`);

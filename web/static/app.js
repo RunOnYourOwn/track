@@ -302,8 +302,8 @@ async function renderDashboard() {
       const total = c.total || 0;
       const done = c.done || 0;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      // health score approximation from counts (server doesn't send it in dashboard)
-      const healthScore = total > 0 ? Math.max(0, Math.min(100, pct - (c.blocked || 0) * 10)) : 50;
+      // Authoritative 5-factor score from the server (db.ComputeHealth).
+      const healthScore = p.health_score ?? 0;
 
       return `
         <a class="project-card" href="#/project/${encodeURIComponent(p.prefix)}/board">
