@@ -9,8 +9,11 @@ const BAR_HEIGHT = 34;
 const BAR_GAP = 8;
 const ROW_HEIGHT = BAR_HEIGHT + BAR_GAP;
 const HEADER_HEIGHT = 56;
-const LEFT_PANEL_WIDTH = 300;
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+function _getLeftPanelWidth() {
+  return window.innerWidth < 600 ? 140 : 300;
+}
 
 const STATUS_COLORS = {
   todo:              { bar: '#222', progress: '#484f58' },
@@ -146,7 +149,8 @@ function _renderTimeline() {
   const container = document.getElementById('timeline-container');
   if (!container) return;
 
-  const totalWidth = Math.max(window.innerWidth - 48, 900);
+  const LEFT_PANEL_WIDTH = _getLeftPanelWidth();
+  const totalWidth = Math.max(window.innerWidth - 24, LEFT_PANEL_WIDTH + 200);
   const chartWidth = totalWidth - LEFT_PANEL_WIDTH;
 
   const x = d3.scaleTime().domain([minDate, maxDate]).range([0, chartWidth]);
@@ -275,6 +279,8 @@ function _renderTimeline() {
       .attr('transform', `translate(${labelX}, ${HEADER_HEIGHT + y})`)
       .style('cursor', row.type === 'feature' ? 'pointer' : 'default');
 
+    const isNarrow = LEFT_PANEL_WIDTH < 200;
+
     if (row.type === 'feature') {
       const hasChildren = row.childCount > 0;
       const expanded = !!_expandedFeatures[row.task.id];
@@ -288,13 +294,14 @@ function _renderTimeline() {
           .text(expanded ? '▾' : '▸');
       }
 
+      const maxChars = isNarrow ? (hasChildren ? 14 : 16) : (hasChildren ? 28 : 34);
       labelG.append('text')
         .attr('x', hasChildren ? 16 : 0).attr('y', ROW_HEIGHT / 2)
         .attr('dominant-baseline', 'middle')
         .attr('fill', '#e0e0e0')
-        .attr('font-size', '13px')
+        .attr('font-size', isNarrow ? '11px' : '13px')
         .attr('font-weight', '500')
-        .text(_truncLabel(row.task.title, hasChildren ? 28 : 34));
+        .text(_truncLabel(row.task.title, maxChars));
 
       // Progress badge
       if (hasChildren) {
@@ -314,12 +321,13 @@ function _renderTimeline() {
       });
     } else {
       // Task row
+      const taskMaxChars = isNarrow ? (row.indent ? 12 : 16) : (row.indent ? 28 : 34);
       labelG.append('text')
         .attr('x', 0).attr('y', ROW_HEIGHT / 2)
         .attr('dominant-baseline', 'middle')
         .attr('fill', row.indent ? '#999' : '#ccc')
-        .attr('font-size', row.indent ? '11px' : '12px')
-        .text(_truncLabel(row.task.title, row.indent ? 28 : 34));
+        .attr('font-size', row.indent ? (isNarrow ? '9px' : '11px') : (isNarrow ? '10px' : '12px'))
+        .text(_truncLabel(row.task.title, taskMaxChars));
     }
   });
 

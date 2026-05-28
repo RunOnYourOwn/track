@@ -84,12 +84,16 @@ async function renderSessions() {
     }
 
     const groups = groupByDate(filtered);
-    list.innerHTML = groups.map(([dateLabel, sessions]) => `
-      <div class="session-date-group">
-        <div class="session-date-header">${dateLabel}</div>
+    list.innerHTML = groups.map(([dateLabel, sessions]) => {
+      const dayTotal = dayDurationTotal(sessions);
+      return `<div class="session-date-group">
+        <div class="session-date-header">
+          <span>${dateLabel}</span>
+          ${dayTotal ? `<span class="session-day-total">${dayTotal}</span>` : ''}
+        </div>
         ${sessions.map(s => sessionCard(s)).join('')}
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
 
     list.querySelectorAll('.session-expand-btn').forEach(btn => {
       btn.addEventListener('click', () => toggleSessionDetail(btn));
@@ -126,6 +130,24 @@ function friendlyDate(d) {
   return d.toLocaleDateString(undefined, {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
   });
+}
+
+function dayDurationTotal(sessions) {
+  let totalMs = 0;
+  let hasAny = false;
+  sessions.forEach(s => {
+    if (s.ended_at) {
+      totalMs += new Date(s.ended_at) - new Date(s.started_at);
+      hasAny = true;
+    }
+  });
+  if (!hasAny) return null;
+  const totalMin = Math.round(totalMs / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}m total`;
+  if (m === 0) return `${h}h total`;
+  return `${h}h ${m}m total`;
 }
 
 function sessionDuration(s) {
@@ -220,10 +242,12 @@ function renderDetailPanel(stats) {
       const cycleTime = t.cycle_time_seconds
         ? `<span class="session-cycle-time">${formatCycleTime(t.cycle_time_seconds)}</span>`
         : '';
+      const estimates = formatEstimates(t);
       html += `<div class="session-task-item">
         ${icon}
         <span class="session-task-id">#${t.seq}</span>
         <span>${escHtml(t.title)}</span>
+        ${estimates}
         ${cycleTime}
       </div>`;
     });
@@ -248,6 +272,15 @@ function renderDetailPanel(stats) {
 
   html += '</div>';
   return html;
+}
+
+function formatEstimates(task) {
+  const parts = [];
+  if (task.estimate_hours > 0) parts.push(`est ${task.estimate_hours}h`);
+  if (task.estimate_agent_minutes > 0) parts.push(`agent ${Math.round(task.estimate_agent_minutes / 60 * 10) / 10}h`);
+  if (task.actual_hours > 0) parts.push(`actual ${task.actual_hours.toFixed(1)}h`);
+  if (parts.length === 0) return '';
+  return `<span class="session-estimate-info">${parts.join(' / ')}</span>`;
 }
 
 function formatCycleTime(seconds) {

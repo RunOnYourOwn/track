@@ -30,7 +30,8 @@ let _detail  = null;
 let _dragTaskId   = null;
 let _dragFromCol  = null;
 let _expandedFeatures = {};
-let _doneCollapsed = true;
+let _collapsedColumns = new Set(['done']);
+let _doneCollapsed = true; // kept for backward compat with CSS class
 
 async function renderKanban(prefix) {
   _prefix  = prefix;
@@ -55,6 +56,7 @@ async function renderKanban(prefix) {
 }
 
 function _drawBoard() {
+  _doneCollapsed = _collapsedColumns.has('done');
   const filtered = _applyFilters(_tasks);
   const html = `
     ${_statsBar()}
@@ -66,6 +68,15 @@ function _drawBoard() {
   `;
   render(html);
   _attachBoardListeners();
+}
+
+function _toggleColumn(colId) {
+  if (_collapsedColumns.has(colId)) {
+    _collapsedColumns.delete(colId);
+  } else {
+    _collapsedColumns.add(colId);
+  }
+  _drawBoard();
 }
 
 function _statsBar() {
@@ -95,6 +106,7 @@ function _statsBar() {
         ${blocked > 0 ? `<span class="stat-chip blocked">${blocked} blocked</span>` : ''}
         <span class="stat-chip todo">${todo} backlog</span>
         <span class="stat-chip total">${total} total</span>
+        <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 5) ? 'wip-over' : ''}" id="stats-wip-chip" title="Click to set WIP limit — controls max items in progress">WIP: ${inProgress}/${(_project && _project.wip_limit) || 5}</span>
       </div>
     </div>
   `;
@@ -191,11 +203,11 @@ function _renderColumn(col, tasks) {
     });
   }
 
-  if (col.id === 'done' && _doneCollapsed) {
+  if (_collapsedColumns.has(col.id)) {
     return `
       <div class="kanban-column kanban-column-collapsed" data-column="${col.id}" id="col-${col.id}">
         <div class="kanban-column-header kanban-column-header-collapsed">
-          <button class="done-toggle-btn" id="done-toggle" title="Expand Done column">◂</button>
+          <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Expand ${col.label}">◂</button>
           <span class="kanban-column-title-rotated">${col.label}</span>
           <span class="kanban-count">${totalCards}</span>
         </div>
@@ -207,9 +219,9 @@ function _renderColumn(col, tasks) {
     <div class="${classes}" data-column="${col.id}" id="col-${col.id}">
       <div class="kanban-column-header">
         <span class="kanban-column-title">${col.label}</span>
-        <span class="kanban-count">${totalCards}${isInProgress ? `/<span class="wip-limit-display" id="wip-limit-display" title="Click to change WIP limit">${wipLimit}</span>` : ''}</span>
+        <span class="kanban-count">${totalCards}${isInProgress ? `/<span class="wip-limit-display" id="wip-limit-display" title="Click to set WIP limit — controls max items in progress">${wipLimit}</span>` : ''}</span>
         ${wip ? '<span class="wip-label" title="WIP limit reached">⚠</span>' : ''}
-        ${col.id === 'done' ? '<button class="done-toggle-btn" id="done-toggle" title="Collapse Done column">▸</button>' : ''}
+        <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Collapse ${col.label}">▸</button>
       </div>
       <div class="kanban-cards" data-column="${col.id}">
         ${cards || '<div style="padding:8px;color:var(--muted);font-size:11px">No items</div>'}
@@ -390,10 +402,9 @@ function _attachBoardListeners() {
     });
   }
 
-  // WIP limit click to edit
-  const wipDisplay = document.getElementById('wip-limit-display');
-  if (wipDisplay) {
-    wipDisplay.addEventListener('click', (e) => {
+  // WIP limit click to edit (column header + stats chip)
+  document.querySelectorAll('#wip-limit-display, #stats-wip-chip').forEach(el => {
+    el.addEventListener('click', (e) => {
       e.stopPropagation();
       const current = (_project && _project.wip_limit) || 5;
       const input = prompt('WIP limit for In Progress:', current);
@@ -404,17 +415,15 @@ function _attachBoardListeners() {
       api.patch(`/projects/${_prefix}`, { wip_limit: val }).catch(() => {});
       _drawBoard();
     });
-  }
+  });
 
-  // Done column toggle
-  const doneToggle = document.getElementById('done-toggle');
-  if (doneToggle) {
-    doneToggle.addEventListener('click', (e) => {
+  // Column collapse toggles
+  document.querySelectorAll('.col-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      _doneCollapsed = !_doneCollapsed;
-      _drawBoard();
+      _toggleColumn(btn.dataset.colToggle);
     });
-  }
+  });
 
   // Feature expand toggles
   document.querySelectorAll('.feature-expand-btn').forEach(btn => {

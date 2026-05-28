@@ -193,12 +193,15 @@ type Snapshot struct {
 }
 
 type TaskActivity struct {
-	TaskID       string `json:"task_id"`
-	Title        string `json:"title"`
-	Seq          int    `json:"seq"`
-	Completed    bool   `json:"completed"`
-	Touched      bool   `json:"touched"`
-	CycleTimeSec *int64 `json:"cycle_time_seconds,omitempty"`
+	TaskID              string  `json:"task_id"`
+	Title               string  `json:"title"`
+	Seq                 int     `json:"seq"`
+	Completed           bool    `json:"completed"`
+	Touched             bool    `json:"touched"`
+	CycleTimeSec        *int64  `json:"cycle_time_seconds,omitempty"`
+	EstimateHours       float64 `json:"estimate_hours,omitempty"`
+	EstimateAgentMinutes int    `json:"estimate_agent_minutes,omitempty"`
+	ActualHours         float64 `json:"actual_hours,omitempty"`
 }
 
 type SessionStats struct {

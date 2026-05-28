@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -86,12 +88,20 @@ var serveCmd = &cobra.Command{
 		mux := http.NewServeMux()
 		api.RegisterRoutes(mux, conn)
 
-		// Serve embedded static files
+		// Compute build fingerprint from embedded files for cache-busting verification
 		staticFS, _ := fs.Sub(web.StaticFiles, "static")
-		mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+		buildHash := computeStaticHash(staticFS)
+
+		// Serve embedded static files — wrapper guarantees no-cache headers
+		staticHandler := http.StripPrefix("/static/", http.FileServer(http.FS(staticFS)))
+		mux.Handle("GET /static/", noCacheMiddleware(buildHash, staticHandler))
 
 		// SPA fallback: serve index.html for all non-API, non-static routes
 		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			w.Header().Set("X-Track-Build", buildHash)
 			http.ServeFileFS(w, r, staticFS, "index.html")
 		})
 
@@ -138,6 +148,53 @@ var serverStatusCmd = &cobra.Command{
 		fmt.Printf("Server: running (PID %d)\n", pid)
 		return nil
 	},
+}
+
+// noCacheWriter wraps http.ResponseWriter to inject no-cache headers
+// right before the status code is written — guarantees they appear on the wire.
+type noCacheWriter struct {
+	http.ResponseWriter
+	buildHash   string
+	wroteHeader bool
+}
+
+func (w *noCacheWriter) WriteHeader(code int) {
+	if !w.wroteHeader {
+		w.wroteHeader = true
+		w.ResponseWriter.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.ResponseWriter.Header().Set("Pragma", "no-cache")
+		w.ResponseWriter.Header().Set("Expires", "0")
+		w.ResponseWriter.Header().Set("X-Track-Build", w.buildHash)
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *noCacheWriter) Write(b []byte) (int, error) {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func noCacheMiddleware(buildHash string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(&noCacheWriter{ResponseWriter: w, buildHash: buildHash}, r)
+	})
+}
+
+func computeStaticHash(staticFS fs.FS) string {
+	h := sha256.New()
+	fs.WalkDir(staticFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		data, err := fs.ReadFile(staticFS, path)
+		if err == nil {
+			h.Write(data)
+		}
+		return nil
+	})
+	return hex.EncodeToString(h.Sum(nil))[:8]
 }
 
 var stopCmd = &cobra.Command{

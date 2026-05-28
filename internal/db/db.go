@@ -105,6 +105,7 @@ func migrate(db *sql.DB) error {
 	migrations := []string{
 		`ALTER TABLE tasks ADD COLUMN type TEXT NOT NULL DEFAULT 'task'`,
 		`ALTER TABLE tasks ADD COLUMN estimate_agent_minutes INTEGER DEFAULT 0`,
+		`ALTER TABLE projects ADD COLUMN external_id TEXT DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		_, _ = db.Exec(m) // ignore "duplicate column" errors

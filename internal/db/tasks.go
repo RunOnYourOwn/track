@@ -247,7 +247,38 @@ func moveTaskNoAutoClose(d *sql.DB, id, status string) error {
 		status, now, completedAt, id); err != nil {
 		return err
 	}
+
+	if status == "done" {
+		hours, err := computeActiveHours(tx, id)
+		if err != nil {
+			return err
+		}
+		if hours > 0 {
+			if _, err := tx.Exec(`UPDATE tasks SET actual_hours = ? WHERE id = ?`, hours, id); err != nil {
+				return err
+			}
+		}
+	}
+
 	return tx.Commit()
+}
+
+func computeActiveHours(tx *sql.Tx, taskID string) (float64, error) {
+	var totalSeconds sql.NullFloat64
+	err := tx.QueryRow(`
+		SELECT SUM(
+			(julianday(exited_at) - julianday(entered_at)) * 86400
+		)
+		FROM task_status_history
+		WHERE task_id = ? AND status = 'in_progress' AND exited_at IS NOT NULL
+	`, taskID).Scan(&totalSeconds)
+	if err != nil {
+		return 0, err
+	}
+	if !totalSeconds.Valid || totalSeconds.Float64 <= 0 {
+		return 0, nil
+	}
+	return totalSeconds.Float64 / 3600.0, nil
 }
 
 func autoCloseParent(db *sql.DB, childID string) {

@@ -1,12 +1,23 @@
 // insights.js — analytics / insights dashboard
 // Requires: api global, render global
 
+let _insightsRange = 30; // days
+
 async function renderInsights() {
   render(`
     <div class="page-insights">
       <div class="page-header">
         <h2>Insights</h2>
         <p class="page-subtitle" style="color:#8b949e;margin:4px 0 0">Cross-project analytics</p>
+      </div>
+      <div class="insights-controls">
+        <label style="color:#8b949e;font-size:11px">Time range:</label>
+        <select id="insights-range" class="form-select" style="min-width:100px">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="0">All time</option>
+        </select>
       </div>
       <div id="insights-loading" class="loading-state">Loading data…</div>
     </div>
@@ -27,27 +38,49 @@ async function renderInsights() {
     return;
   }
 
-  // Fetch tasks for all projects in parallel
   const taskResults = await Promise.allSettled(
     projects.map(p => api.get(`/projects/${p.prefix}/tasks`))
   );
 
-  const projectData = projects.map((p, i) => ({
+  const allProjectData = projects.map((p, i) => ({
     ...p,
     tasks: taskResults[i].status === 'fulfilled' ? (taskResults[i].value || []) : [],
   }));
 
-  const container = document.getElementById('insights-loading').parentElement;
   document.getElementById('insights-loading').remove();
 
-  container.insertAdjacentHTML('beforeend', `
-    <div class="insights-grid">
-      ${buildThroughputCard(projectData)}
-      ${buildAccuracyCard(projectData)}
-      ${buildDistributionCard(projectData)}
-      ${buildWIPCard(projectData)}
-    </div>
-  `);
+  function drawInsights() {
+    const cutoff = _insightsRange > 0
+      ? new Date(Date.now() - _insightsRange * 86400000).toISOString()
+      : null;
+
+    const projectData = allProjectData.map(p => ({
+      ...p,
+      tasks: cutoff
+        ? p.tasks.filter(t => (t.completed_at || t.updated_at || t.created_at) >= cutoff)
+        : p.tasks,
+    }));
+
+    const grid = document.getElementById('insights-grid');
+    if (grid) grid.remove();
+
+    document.querySelector('.page-insights').insertAdjacentHTML('beforeend', `
+      <div class="insights-grid" id="insights-grid">
+        ${buildThroughputCard(projectData)}
+        ${buildCycleTimeCard(projectData)}
+        ${buildAccuracyCard(projectData)}
+        ${buildDistributionCard(allProjectData)}
+        ${buildWIPCard(allProjectData)}
+      </div>
+    `);
+  }
+
+  drawInsights();
+
+  document.getElementById('insights-range').addEventListener('change', e => {
+    _insightsRange = parseInt(e.target.value, 10);
+    drawInsights();
+  });
 }
 
 // ── Card 1: Throughput ───────────────────────────────────────────────────────
@@ -78,7 +111,52 @@ function buildThroughputCard(projectData) {
   return chartCard('Throughput', 'Tasks completed per project', bars || emptyRow());
 }
 
-// ── Card 2: Estimation Accuracy ──────────────────────────────────────────────
+// ── Card 2: Cycle Time ──────────────────────────────────────────────────────
+
+function buildCycleTimeCard(projectData) {
+  const rows = projectData.map(p => {
+    const completed = p.tasks.filter(t => t.status === 'done' && t.created_at && t.completed_at);
+    if (completed.length === 0) return { prefix: p.prefix, name: p.name, avg: null, count: 0 };
+
+    const cycleTimes = completed.map(t => {
+      const ms = new Date(t.completed_at) - new Date(t.created_at);
+      return ms / 3600000; // hours
+    });
+    const avg = cycleTimes.reduce((a, b) => a + b, 0) / cycleTimes.length;
+    return { prefix: p.prefix, name: p.name, avg, count: completed.length };
+  });
+
+  const maxAvg = Math.max(...rows.filter(r => r.avg !== null).map(r => r.avg), 1);
+
+  const bars = rows.map(r => {
+    if (r.avg === null) {
+      return `
+        <div class="chart-row">
+          <div class="chart-label">
+            <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
+            <span class="chart-empty-msg">No completed tasks</span>
+          </div>
+        </div>`;
+    }
+    const color = r.avg <= 4 ? '#3fb950' : r.avg <= 12 ? '#58a6ff' : r.avg <= 48 ? '#d29922' : '#f85149';
+    const display = r.avg < 1 ? `${Math.round(r.avg * 60)}m` : r.avg < 24 ? `${r.avg.toFixed(1)}h` : `${(r.avg / 24).toFixed(1)}d`;
+    return `
+      <div class="chart-row">
+        <div class="chart-label">
+          <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
+          <span style="color:#8b949e;font-size:11px;margin-left:6px">(${r.count} tasks)</span>
+        </div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width:${pct(r.avg, maxAvg)}%;background:${color}"></div>
+        </div>
+        <div class="chart-value" style="color:${color}">${display}</div>
+      </div>`;
+  }).join('');
+
+  return chartCard('Cycle Time', 'Avg time from created to done (shorter = better)', bars || emptyRow());
+}
+
+// ── Card 3: Estimation Accuracy ──────────────────────────────────────────────
 
 function buildAccuracyCard(projectData) {
   const rows = projectData.map(p => {
@@ -102,13 +180,8 @@ function buildAccuracyCard(projectData) {
         <div class="chart-row">
           <div class="chart-label">
             <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
+            <span class="chart-empty-msg">No data (need estimate + actual)</span>
           </div>
-          <div class="bar-track">
-            <div style="color:#8b949e;font-size:12px;line-height:20px;padding-left:8px">
-              No data (need estimate + actual)
-            </div>
-          </div>
-          <div class="chart-value" style="color:#8b949e">—</div>
         </div>`;
     }
     const color = r.avg >= 80 ? '#3fb950' : r.avg >= 60 ? '#d29922' : '#f85149';
@@ -141,8 +214,10 @@ function buildDistributionCard(projectData) {
     if (total === 0) {
       return `
         <div class="chart-row">
-          <div class="chart-label"><span class="badge badge-prefix">${escHtml(p.prefix)}</span></div>
-          <div class="bar-track" style="color:#8b949e;font-size:12px;padding-left:8px">No tasks</div>
+          <div class="chart-label">
+            <span class="badge badge-prefix">${escHtml(p.prefix)}</span>
+            <span class="chart-empty-msg">No tasks</span>
+          </div>
         </div>`;
     }
     const counts = { todo: 0, in_progress: 0, done: 0, blocked: 0 };
