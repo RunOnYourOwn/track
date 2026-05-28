@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -281,6 +282,11 @@ func (h *handler) createProject(w http.ResponseWriter, r *http.Request) {
 
 	p, err := db.CreateProject(h.conn, req.Prefix, req.Name, req.Phase, req.PhaseType, req.ExternalID, req.Metadata, req.WIPLimit)
 	if err != nil {
+		var ve *db.ValidationError
+		if errors.As(err, &ve) {
+			writeError(w, http.StatusBadRequest, ve.Msg)
+			return
+		}
 		writeServerError(w, err)
 		return
 	}

@@ -77,6 +77,24 @@ function _renderTimeline() {
   const epicIds = new Set(epics.map(t => t.id));
   const featureIds = new Set(features.map(t => t.id));
 
+  // Unfiltered groupings for rollup counts: the "Show done" toggle must change
+  // only which rows are displayed, not the completion math (done children still
+  // count toward childCount/doneCount). Built from _tasks, not activeTasks.
+  const allEpicIds = new Set(_tasks.filter(t => t.type === 'epic').map(t => t.id));
+  const allFeatureIds = new Set(_tasks.filter(t => (t.type || 'task') === 'feature').map(t => t.id));
+  const allTasksByFeature = {};
+  const allTasksByEpic = {};
+  const allFeaturesByEpic = {};
+  _tasks.forEach(t => {
+    const type = t.type || 'task';
+    if (type === 'feature' && t.parent_id && allEpicIds.has(t.parent_id)) {
+      (allFeaturesByEpic[t.parent_id] = allFeaturesByEpic[t.parent_id] || []).push(t);
+    } else if (type === 'task' && t.parent_id) {
+      if (allFeatureIds.has(t.parent_id)) (allTasksByFeature[t.parent_id] = allTasksByFeature[t.parent_id] || []).push(t);
+      else if (allEpicIds.has(t.parent_id)) (allTasksByEpic[t.parent_id] = allTasksByEpic[t.parent_id] || []).push(t);
+    }
+  });
+
   // Group features by parent epic
   const featuresByEpic = {};
   const orphanFeatures = [];
@@ -112,9 +130,10 @@ function _renderTimeline() {
   const rows = [];
 
   function _addFeatureRow(feat, indent) {
-    const children = (tasksByFeature[feat.id] || []);
-    const doneCount = children.filter(t => t.status === 'done').length;
-    rows.push({ type: 'feature', task: feat, childCount: children.length, doneCount, indent });
+    const children = (tasksByFeature[feat.id] || []);          // filtered → visible rows
+    const allChildren = (allTasksByFeature[feat.id] || []);    // full → rollup counts
+    const doneCount = allChildren.filter(t => t.status === 'done').length;
+    rows.push({ type: 'feature', task: feat, childCount: allChildren.length, doneCount, indent });
     if (_expandedFeatures[feat.id]) {
       children.forEach(child => {
         rows.push({ type: 'task', task: child, indent: indent + 1 });
@@ -125,10 +144,13 @@ function _renderTimeline() {
   // Epics with their features and tasks
   // Non-done epics default to expanded (user can collapse); done epics default to collapsed
   epics.forEach(epic => {
-    const epicFeatures = (featuresByEpic[epic.id] || []);
-    const epicDirectTasks = (tasksByEpic[epic.id] || []);
-    const featureDescendants = epicFeatures.flatMap(f => tasksByFeature[f.id] || []);
-    const allDescendants = [...featureDescendants, ...epicDirectTasks];
+    const epicFeatures = (featuresByEpic[epic.id] || []);   // filtered → visible rows
+    const epicDirectTasks = (tasksByEpic[epic.id] || []);   // filtered → visible rows
+    // Rollup counts span every descendant, including done ones hidden by the filter.
+    const allDescendants = [
+      ...(allFeaturesByEpic[epic.id] || []).flatMap(f => allTasksByFeature[f.id] || []),
+      ...(allTasksByEpic[epic.id] || []),
+    ];
     const doneCount = allDescendants.filter(t => t.status === 'done').length;
     rows.push({ type: 'epic', task: epic, childCount: allDescendants.length, doneCount, indent: 0 });
     const isExpanded = _expandedEpics[epic.id] !== undefined

@@ -194,13 +194,14 @@ function sessionCard(s) {
       </div>
       ${s.summary ? `<div class="session-summary">${escHtml(s.summary)}</div>` : ''}
       ${statsRow}
-      ${hasDetail ? `<button class="session-expand-btn" data-sid="${s.id}">▾ Details</button>` : ''}
+      ${hasDetail ? `<button class="session-expand-btn" data-sid="${s.id}" data-prefix="${escHtml(s._prefix)}">▾ Details</button>` : ''}
       <div class="session-detail-slot" id="detail-${s.id}"></div>
     </div>`;
 }
 
 async function toggleSessionDetail(btn) {
   const sid = btn.dataset.sid;
+  const prefix = btn.dataset.prefix || '';
   const slot = document.getElementById('detail-' + sid);
 
   if (_expandedSessions[sid]) {
@@ -214,7 +215,7 @@ async function toggleSessionDetail(btn) {
   btn.textContent = '▴ Hide';
 
   if (_sessionStatsCache[sid]) {
-    slot.innerHTML = renderDetailPanel(_sessionStatsCache[sid]);
+    mountDetailPanel(slot, _sessionStatsCache[sid], prefix);
     return;
   }
 
@@ -223,10 +224,38 @@ async function toggleSessionDetail(btn) {
   try {
     const stats = await api.get(`/sessions/${sid}/stats`);
     _sessionStatsCache[sid] = stats;
-    slot.innerHTML = renderDetailPanel(stats);
+    mountDetailPanel(slot, stats, prefix);
   } catch (e) {
     slot.innerHTML = `<div style="color:var(--danger);font-size:11px;padding:6px 0">Failed to load details</div>`;
   }
+}
+
+// Render the detail panel and wire each listed task to the shared detail modal.
+function mountDetailPanel(slot, stats, prefix) {
+  slot.innerHTML = renderDetailPanel(stats);
+  slot.querySelectorAll('.session-task-item[data-task-id]').forEach(item => {
+    const open = () => openSessionTaskDetail(item.dataset.taskId, prefix);
+    item.addEventListener('click', open);
+    item.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+    });
+  });
+}
+
+// Fetch the project's tasks (full objects + the list the modal needs for the
+// parent dropdown) and open the shared task modal for the clicked task.
+async function openSessionTaskDetail(taskId, prefix) {
+  if (!taskId || typeof openTaskModal !== 'function') return;
+  try {
+    const tasks = await api.get(`/projects/${encodeURIComponent(prefix)}/tasks`);
+    const task = (tasks || []).find(t => t.id === taskId);
+    if (!task) return;
+    const refresh = () => {
+      Object.keys(_sessionStatsCache).forEach(k => delete _sessionStatsCache[k]);
+      renderSessions();
+    };
+    openTaskModal(task, { prefix, allTasks: tasks, onSaved: refresh, onDeleted: refresh });
+  } catch (_) { /* leave the panel as-is on failure */ }
 }
 
 function renderDetailPanel(stats) {
@@ -243,7 +272,7 @@ function renderDetailPanel(stats) {
         ? `<span class="session-cycle-time">${formatCycleTime(t.cycle_time_seconds)}</span>`
         : '';
       const estimates = formatEstimates(t);
-      html += `<div class="session-task-item">
+      html += `<div class="session-task-item" data-task-id="${t.task_id}" role="button" tabindex="0" title="View task detail">
         ${icon}
         <span class="session-task-id">#${t.seq}</span>
         <span>${escHtml(t.title)}</span>

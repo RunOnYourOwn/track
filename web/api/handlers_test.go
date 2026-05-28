@@ -103,6 +103,24 @@ func TestTaskCreateValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+// An invalid project prefix is a client error → 400 (not a 500), while a valid
+// one is created → 201.
+func TestCreateProjectPrefixValidationHTTP(t *testing.T) {
+	srv, _ := newTestServer(t)
+
+	resp := doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"<img src=x onerror=alert(1)>","name":"x"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad prefix: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"good1","name":"Good"}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("valid prefix: got %d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 // M7: updateSprint for a nonexistent id returns 404, not 200 null.
 func TestUpdateSprintNotFound(t *testing.T) {
 	srv, _ := newTestServer(t)

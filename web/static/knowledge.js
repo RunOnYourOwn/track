@@ -200,7 +200,7 @@ function decisionCard(d, expiringSoon) {
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="badge badge-prefix">${escHtml(d._prefix)}</span>
           <span class="badge"
-            style="background:${sc.bg};color:${sc.text}">${capitalize(d.status)}</span>
+            style="background:${sc.bg};color:${sc.text}">${escHtml(capitalize(d.status))}</span>
           <span class="knowledge-card-title">${escHtml(d.title)}</span>
           ${expiryWarning}
         </div>
@@ -249,7 +249,7 @@ function renderLearningsPanel(learnings, projects) {
         data-cat="${escHtml(cat)}"
         style="background:${cc.bg};color:${cc.text};border:1px solid transparent;
                border-radius:12px;padding:3px 10px;font-size:12px;cursor:pointer">
-        ${capitalize(cat)}
+        ${escHtml(capitalize(cat))}
       </button>`;
   }).join('');
 
@@ -374,7 +374,7 @@ function learningCard(l, catColor) {
       <div class="knowledge-card-header">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span class="badge badge-prefix">${escHtml(l._prefix)}</span>
-          ${l.category ? `<span class="badge" style="background:${cc.bg};color:${cc.text}">${capitalize(l.category)}</span>` : ''}
+          ${l.category ? `<span class="badge" style="background:${cc.bg};color:${cc.text}">${escHtml(capitalize(l.category))}</span>` : ''}
           <span class="knowledge-card-title">${escHtml(l.title)}</span>
         </div>
       </div>

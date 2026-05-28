@@ -1096,6 +1096,8 @@ code, .mono {
   padding: 3px 0;
   color: var(--text);
 }
+.session-task-item[data-task-id] { cursor: pointer; border-radius: 4px; padding-left: 4px; margin-left: -4px; }
+.session-task-item[data-task-id]:hover { background: var(--surface-hover, #161b22); }
 .session-task-icon { font-size: 11px; }
 .session-task-icon.done { color: var(--success); }
 .session-task-icon.touched { color: var(--accent); }
