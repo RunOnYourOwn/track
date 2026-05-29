@@ -125,7 +125,7 @@ function _renderActiveCard(task) {
     <div class="focus-active-header">
       <span class="focus-active-id">${displayId}</span>
       ${estimate}
-      <span class="priority-badge ${task.priority}">${task.priority}</span>
+      ${priorityBadge(task.priority)}
     </div>
     <div class="focus-active-title">${escHtml(task.title)}</div>
     ${desc}
