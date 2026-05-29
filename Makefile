@@ -14,8 +14,12 @@ test:
 build:
 	go build -o track .
 
+# `make install` uses `go install` (a same-volume rename into GOBIN), not `cp` to
+# ~/bin: on Apple Silicon macOS Sequoia, copying the signed Mach-O re-touches its
+# xattrs (com.apple.provenance) and invalidates the ad-hoc code signature, so the
+# copy gets SIGKILLed on launch. GOBIN pins the install dir to ~/bin as before.
 install: check
-	cp track ~/bin/track
+	GOBIN=$(HOME)/bin go install .
 
 deploy: check install
 	@echo "Deployed to ~/bin/track"

@@ -9,7 +9,9 @@ CLI + web UI for local project management. Single Go binary, SQLite database, no
 - Web UI: vanilla JS + CSS (no build step), served from embedded filesystem
 - Test: `go test ./...`
 - Build: `make build` → `./track` at the repo root. `make check` = vet + test + build;
-  `make install` copies to `~/bin`. (No `bin/` dir and no `make release` target.)
+  `make install` runs `go install` into `~/bin` (via `GOBIN`; not `cp`, which on
+  Apple Silicon macOS breaks the binary's ad-hoc signature). (No `bin/` dir and no
+  `make release` target.)
 
 ### Running the local server (read this before debugging "the UI looks wrong")
 
