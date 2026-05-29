@@ -147,11 +147,16 @@ function _drawGraph() {
 
   const PRIORITY_COLORS = { urgent: '#f85149', high: '#d29922', medium: '#58a6ff', low: '#484f58' };
 
-  // Render with toolbar
+  // Render with toolbar (+ pan/zoom controls)
   render(`<div class="page-graph">
     <div class="timeline-toolbar">
       ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
       ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;">⚠ dependency cycle detected</span>` : ''}
+      <span style="margin-left:auto;display:inline-flex;gap:6px;">
+        <button class="btn-ghost btn-sm" id="graph-zoom-out" title="Zoom out">−</button>
+        <button class="btn-ghost btn-sm" id="graph-zoom-in" title="Zoom in">+</button>
+        <button class="btn-ghost btn-sm" id="graph-fit" title="Fit graph to screen">Fit</button>
+      </span>
     </div>
     <div id="graph-container" style="position:relative;"></div>
   </div>`);
@@ -160,18 +165,24 @@ function _drawGraph() {
   if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
 
   const container = document.getElementById('graph-container');
-
   const containerRect = container.getBoundingClientRect();
-  const svgW = Math.max(totalWidth, containerRect.width || 900);
-  const svgH = Math.max(totalHeight, containerRect.height || 500);
+
+  // The SVG fills the viewport; all content lives in a single pannable/zoomable
+  // layer so arbitrarily large graphs stay navigable (drag to pan, scroll/buttons
+  // to zoom, Fit to reset). Real projects produce graphs far larger than one screen.
+  const viewW = Math.max(containerRect.width || 900, 600);
+  const viewH = Math.max((window.innerHeight || 800) - 160, 480);
 
   const svg = d3.select(container)
     .append('svg')
-    .attr('width', svgW)
-    .attr('height', svgH)
+    .attr('width', viewW)
+    .attr('height', viewH)
     .style('font-family', 'var(--font-mono)')
     .style('display', 'block')
+    .style('cursor', 'grab')
     .on('click', () => _closeGraphDetail());
+
+  const zoomLayer = svg.append('g'); // pan/zoom transforms apply here
 
   // Column backgrounds — aligned to actual node positions
   layerNodes.forEach((nodesInLayer, l) => {
@@ -181,7 +192,7 @@ function _drawGraph() {
     const lastPos = pos.get(nodesInLayer[nodesInLayer.length - 1].id);
     const minY = firstPos.y - 10;
     const maxY = lastPos.y + NODE_H + 10;
-    svg.append('rect')
+    zoomLayer.append('rect')
       .attr('x', x - 10)
       .attr('y', minY)
       .attr('width', NODE_W + 20)
@@ -191,7 +202,7 @@ function _drawGraph() {
   });
 
   // Draw edges (curved paths)
-  const edgeG = svg.append('g');
+  const edgeG = zoomLayer.append('g');
 
   // Arrow markers
   const defs = svg.append('defs');
@@ -257,7 +268,7 @@ function _drawGraph() {
   });
 
   // Draw nodes
-  const nodeG = svg.append('g');
+  const nodeG = zoomLayer.append('g');
 
   connectedTasks.forEach(t => {
     const p = pos.get(t.id);
@@ -340,8 +351,8 @@ function _drawGraph() {
     });
   });
 
-  // Legend
-  const legendY = Math.max(svgH - 36, totalHeight + 10);
+  // Legend — pinned to the viewport bottom (on svg, outside the zoom layer).
+  const legendY = viewH - 24;
   const legendG = svg.append('g').attr('transform', `translate(${PAD_X}, ${legendY})`);
   const legendItems = [
     { label: 'To Do', color: '#484f58' },
@@ -367,6 +378,24 @@ function _drawGraph() {
       .text(item.label);
     lx += 22 + item.label.length * 7;
   });
+
+  // Pan/zoom: drag to pan, scroll or the +/−/Fit buttons to zoom. Content scales
+  // in zoomLayer; the legend (on svg) stays pinned.
+  const zoom = d3.zoom().scaleExtent([0.1, 2.5]).on('zoom', ev => zoomLayer.attr('transform', ev.transform));
+  svg.call(zoom).on('dblclick.zoom', null);
+
+  function _fitToView() {
+    const pad = 30;
+    const k = Math.max(0.1, Math.min((viewW - pad * 2) / totalWidth, (viewH - pad * 2) / totalHeight, 1.5));
+    const tx = (viewW - totalWidth * k) / 2;
+    const ty = Math.max(pad, (viewH - totalHeight * k) / 2);
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+  _fitToView();
+
+  document.getElementById('graph-fit')?.addEventListener('click', e => { e.stopPropagation(); _fitToView(); });
+  document.getElementById('graph-zoom-in')?.addEventListener('click', e => { e.stopPropagation(); svg.transition().duration(150).call(zoom.scaleBy, 1.3); });
+  document.getElementById('graph-zoom-out')?.addEventListener('click', e => { e.stopPropagation(); svg.transition().duration(150).call(zoom.scaleBy, 1 / 1.3); });
 }
 
 function _openGraphDetail(task, prefix, edges, taskById) {
