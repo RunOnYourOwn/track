@@ -224,14 +224,19 @@ function _drawGraph() {
   const totalWidth = PAD_X * 2 + (maxLayer + 1) * (NODE_W + LAYER_GAP) - LAYER_GAP;
 
   // Status colors
+  // Status keys MUST stay in sync with the canonical set in internal/db/tasks.go
+  // (validStatuses). An unknown status falls back to STATUS.todo below, which would
+  // silently paint it grey — see the audit finding that blocked/waiting_* were
+  // missing here and rendered as "To Do".
   const STATUS = {
-    todo:              { bg: '#1c1c1c', border: '#484f58', text: '#8b949e', label: 'To Do' },
-    in_progress:       { bg: '#0d2240', border: '#58a6ff', text: '#58a6ff', label: 'In Progress' },
-    done:              { bg: '#0d2d1a', border: '#3fb950', text: '#3fb950', label: 'Done' },
-    cancelled:         { bg: '#161616', border: '#484f58', text: '#6e7681', label: 'Cancelled' },
-    waiting_external:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },
-    waiting_decision:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },
-    waiting_feedback:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },
+    todo:               { bg: '#1c1c1c', border: '#484f58', text: '#8b949e', label: 'To Do' },
+    in_progress:        { bg: '#0d2240', border: '#58a6ff', text: '#58a6ff', label: 'In Progress' },
+    blocked:            { bg: '#2d0d0d', border: '#f85149', text: '#f85149', label: 'Blocked' },
+    waiting_review:     { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'In Review' },
+    waiting_external:   { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting (ext)' },
+    waiting_dependency: { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting (dep)' },
+    done:               { bg: '#0d2d1a', border: '#3fb950', text: '#3fb950', label: 'Done' },
+    cancelled:          { bg: '#161616', border: '#484f58', text: '#6e7681', label: 'Cancelled' },
   };
 
   const PRIORITY_COLORS = { urgent: '#f85149', high: '#d29922', medium: '#58a6ff', low: '#484f58' };
@@ -502,14 +507,16 @@ function _drawGraph() {
   // Legend — pinned to the viewport bottom (on svg, outside the zoom layer).
   const legendY = viewH - 24;
   const legendG = svg.append('g').attr('transform', `translate(${PAD_X}, ${legendY})`);
+  const critHours = _graph && _graph.critical_hours ? Math.round(_graph.critical_hours * 10) / 10 : 0;
   const legendItems = [
     { label: 'To Do', color: '#484f58' },
     { label: 'In Progress', color: '#58a6ff' },
-    { label: 'Done', color: '#3fb950' },
+    { label: 'Blocked', color: '#f85149' },
     { label: 'Waiting', color: '#d29922' },
+    { label: 'Done', color: '#3fb950' },
     { label: 'Contains', color: '#6e7681', line: true },
     { label: 'Blocks', color: '#58a6ff', line: true },
-    { label: 'Critical Path', color: '#f85149', line: true },
+    { label: critHours > 0 ? `Critical Path (${critHours}h)` : 'Critical Path', color: '#f85149', line: true },
   ];
   let lx = 0;
   legendItems.forEach(item => {

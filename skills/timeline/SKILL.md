@@ -75,7 +75,12 @@ Group tasks into milestones if logical clusters exist:
 | 2 | Jun 2 - Jun 8 | {PREFIX}-8, {PREFIX}-9 | 7.0h | Dashboard complete |
 
 ### Critical path
-{task} → {task} → {task} (longest dependency chain: {hours}h)
+
+The longest blocks-chain weighted by estimate hours (the graph view computes this
+authoritatively and reports it as `critical_hours`; if tasks are unsized the chain
+is the most hops and the hours total is approximate):
+
+{task} → {task} → {task} (chain effort: {hours}h)
 
 ### Risks to timeline
 - {N} unsized tasks (estimated at default M)

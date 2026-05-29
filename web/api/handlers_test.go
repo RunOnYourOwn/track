@@ -102,6 +102,33 @@ func TestProjectsEndpoints(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestCreateTaskHonorsTypeAndStartDate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"WEB","name":"W"}`).Body.Close()
+
+	// The web UI's "add child feature/epic" POSTs a type; it must not be dropped
+	// (else the Epic→Feature→Task hierarchy silently degrades to plain tasks).
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/WEB/tasks",
+		`{"title":"Auth feature","type":"feature","start_date":"2026-06-01"}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: got %d, want 201", resp.StatusCode)
+	}
+	var task struct {
+		Type      string  `json:"type"`
+		StartDate *string `json:"start_date"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	resp.Body.Close()
+	if task.Type != "feature" {
+		t.Fatalf("type dropped on HTTP create: got %q want feature", task.Type)
+	}
+	if task.StartDate == nil || *task.StartDate != "2026-06-01" {
+		t.Fatalf("start_date dropped on HTTP create: got %v", task.StartDate)
+	}
+}
+
 func TestTaskCreateValidationHTTP(t *testing.T) {
 	srv, _ := newTestServer(t)
 	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"WEB","name":"W"}`).Body.Close()

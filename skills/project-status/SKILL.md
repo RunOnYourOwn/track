@@ -35,13 +35,13 @@ Calculate:
 ### 3. Get velocity data
 
 ```bash
-track report velocity --project {PREFIX} --weeks 4
+track velocity --project {PREFIX} --weeks 4
 ```
 
 ### 4. Get health report
 
 ```bash
-track report health --project {PREFIX}
+track health --project {PREFIX}
 ```
 
 ### 5. Output dashboard

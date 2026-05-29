@@ -406,6 +406,7 @@ func (h *handler) listTasks(w http.ResponseWriter, r *http.Request) {
 
 type createTaskRequest struct {
 	Title         string  `json:"title"`
+	Type          string  `json:"type"`
 	Description   string  `json:"description"`
 	Priority      string  `json:"priority"`
 	EstimateSize  string  `json:"estimate_size"`
@@ -414,6 +415,7 @@ type createTaskRequest struct {
 	SourceType    string  `json:"source_type"`
 	AgentContext  string  `json:"agent_context"`
 	Tags          string  `json:"tags"`
+	StartDate     string  `json:"start_date"`
 	DueDate       string  `json:"due_date"`
 }
 
@@ -442,6 +444,7 @@ func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
 	task, err := db.CreateTask(h.conn, db.CreateTaskOpts{
 		ProjectID:     p.ID,
 		Title:         req.Title,
+		Type:          req.Type,
 		Description:   req.Description,
 		Priority:      req.Priority,
 		EstimateSize:  req.EstimateSize,
@@ -450,6 +453,7 @@ func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
 		SourceType:    req.SourceType,
 		AgentContext:  req.AgentContext,
 		Tags:          req.Tags,
+		StartDate:     req.StartDate,
 		DueDate:       req.DueDate,
 	})
 	if err != nil {

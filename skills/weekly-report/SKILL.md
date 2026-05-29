@@ -18,7 +18,7 @@ track project list
 For each project:
 ```bash
 track task list --project {PREFIX}
-track report velocity --project {PREFIX} --weeks 1
+track velocity --project {PREFIX} --weeks 1
 ```
 
 ### 2. Read session notes
@@ -32,7 +32,7 @@ Check `docs/session-notes/` for this week's dated files (Mon–Sun). Extract:
 ### 3. Get velocity from track
 
 ```bash
-track report velocity --project {PREFIX} --weeks 4
+track velocity --project {PREFIX} --weeks 4
 ```
 
 This gives rolling velocity data computed from the database.
