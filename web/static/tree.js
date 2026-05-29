@@ -28,7 +28,20 @@ async function renderTree(prefix) {
     render(`<div class="alert alert-danger">Failed to load: ${escHtml(err.message)}</div>`);
     return;
   }
+  _initDefaultCollapse();
   _drawTable();
+}
+
+// Default tree state: only epics are expanded, so a fresh view shows epics plus
+// their direct children — features and any tasks attached straight to the epic.
+// Everything under a feature stays folded until the user expands it. Runs only on
+// load (not on redraws), so manual toggles within the session are preserved.
+function _initDefaultCollapse() {
+  _collapsed = {};
+  const hasChildren = (id) => _tasks.some(c => c.parent_id === id);
+  _tasks.forEach(t => {
+    if ((t.type || 'task') !== 'epic' && hasChildren(t.id)) _collapsed[t.id] = true;
+  });
 }
 
 function _drawTable() {
