@@ -33,7 +33,10 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	mux.HandleFunc("POST /api/projects/{prefix}/tasks", cors(h.createTask))
 	mux.HandleFunc("GET /api/projects/{prefix}/sessions", cors(h.listSessions))
 	mux.HandleFunc("GET /api/projects/{prefix}/decisions", cors(h.listDecisions))
+	mux.HandleFunc("POST /api/projects/{prefix}/decisions", cors(h.createDecision))
 	mux.HandleFunc("GET /api/projects/{prefix}/learnings", cors(h.listLearnings))
+	mux.HandleFunc("POST /api/projects/{prefix}/learnings", cors(h.createLearning))
+	mux.HandleFunc("POST /api/decisions/{id}/resolve", cors(h.resolveDecision))
 	mux.HandleFunc("GET /api/projects/{prefix}/blockers", cors(h.listBlockers))
 
 	// Tasks
@@ -736,6 +739,124 @@ func (h *handler) listLearnings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, coalesceLearnings(learnings))
+}
+
+type createDecisionRequest struct {
+	Title     string   `json:"title"`
+	Context   string   `json:"context"`
+	Options   []string `json:"options"`
+	DecidedBy string   `json:"decided_by"`
+	RevisitBy string   `json:"revisit_by"`
+}
+
+func (h *handler) createDecision(w http.ResponseWriter, r *http.Request) {
+	p, err := db.GetProjectByPrefix(h.conn, r.PathValue("prefix"))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	var req createDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	opts := db.CreateDecisionOpts{
+		ProjectID: p.ID,
+		Title:     req.Title,
+		Context:   req.Context,
+		DecidedBy: req.DecidedBy,
+		RevisitBy: req.RevisitBy,
+	}
+	if len(req.Options) > 0 {
+		if b, err := json.Marshal(req.Options); err == nil {
+			opts.Options = string(b)
+		}
+	}
+	dec, err := db.CreateDecision(h.conn, opts)
+	if err != nil {
+		writeServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, dec)
+}
+
+type createLearningRequest struct {
+	Title     string   `json:"title"`
+	Body      string   `json:"body"`
+	Category  string   `json:"category"`
+	AppliesTo []string `json:"applies_to"`
+}
+
+func (h *handler) createLearning(w http.ResponseWriter, r *http.Request) {
+	p, err := db.GetProjectByPrefix(h.conn, r.PathValue("prefix"))
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	var req createLearningRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Title) == "" {
+		writeError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+	opts := db.CreateLearningOpts{
+		ProjectID: p.ID,
+		Title:     req.Title,
+		Body:      req.Body,
+		Category:  req.Category,
+	}
+	if len(req.AppliesTo) > 0 {
+		if b, err := json.Marshal(req.AppliesTo); err == nil {
+			opts.AppliesTo = string(b)
+		}
+	}
+	l, err := db.CreateLearning(h.conn, opts)
+	if err != nil {
+		writeServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, l)
+}
+
+type resolveDecisionRequest struct {
+	Decision  string `json:"decision"`
+	Rationale string `json:"rationale"`
+}
+
+func (h *handler) resolveDecision(w http.ResponseWriter, r *http.Request) {
+	var req resolveDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if strings.TrimSpace(req.Decision) == "" {
+		writeError(w, http.StatusBadRequest, "decision is required")
+		return
+	}
+	if err := db.ResolveDecision(h.conn, r.PathValue("id"), req.Decision, req.Rationale); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, "decision not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *handler) listBlockers(w http.ResponseWriter, r *http.Request) {
