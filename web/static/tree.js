@@ -218,6 +218,11 @@ function _attachListeners() {
       if (e.target.closest('.tt-toggle')) return;
       const id = el.dataset.id;
       const field = el.dataset.edit;
+      // Epic/feature dates are derived from descendants — not editable here.
+      if (field === 'due_date' || field === 'start_date') {
+        const task = _tasks.find(t => t.id === id);
+        if (task && (task.type === 'epic' || task.type === 'feature')) return;
+      }
       _startEdit(id, field, el);
     });
   });

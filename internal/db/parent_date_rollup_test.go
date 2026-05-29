@@ -39,6 +39,26 @@ func TestRollupParentDates(t *testing.T) {
 	}
 }
 
+// A parent's date is settable while childless (e.g. ADO import) but rejected
+// once it has descendants, since the value is then derived.
+func TestParentDateWriteGuard(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "PDG")
+	epic, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "E", Type: "epic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateTaskField(d, epic.ID, "due_date", "2026-07-01"); err != nil {
+		t.Fatalf("childless epic due_date should be allowed: %v", err)
+	}
+	if _, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t", Type: "task", ParentID: epic.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateTaskField(d, epic.ID, "due_date", "2026-08-01"); err == nil {
+		t.Fatal("epic with children should reject a manual due_date")
+	}
+}
+
 type Taskish struct{ start, due *string }
 
 func deref(s *string) string {

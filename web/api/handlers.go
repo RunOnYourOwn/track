@@ -125,6 +125,17 @@ func writeServerError(w http.ResponseWriter, err error) {
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 }
 
+// writeFieldError maps a db.ValidationError (a client mistake, e.g. setting a
+// derived field) to 400; anything else is a 500.
+func writeFieldError(w http.ResponseWriter, err error) {
+	var ve *db.ValidationError
+	if errors.As(err, &ve) {
+		writeError(w, http.StatusBadRequest, ve.Msg)
+		return
+	}
+	writeServerError(w, err)
+}
+
 // splitCSV splits a comma-separated query parameter value, dropping blanks.
 func splitCSV(s string) []string {
 	if s == "" {
@@ -558,14 +569,14 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 
 	if req.StartDate != nil {
 		if err := db.UpdateTaskField(h.conn, id, "start_date", *req.StartDate); err != nil {
-			writeServerError(w, err)
+			writeFieldError(w, err)
 			return
 		}
 	}
 
 	if req.DueDate != nil {
 		if err := db.UpdateTaskField(h.conn, id, "due_date", *req.DueDate); err != nil {
-			writeServerError(w, err)
+			writeFieldError(w, err)
 			return
 		}
 	}

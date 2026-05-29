@@ -564,6 +564,21 @@ func UpdateTaskField(d *sql.DB, id, field, value string) error {
 		if !validTypes[value] {
 			return fmt.Errorf("invalid type %q", value)
 		}
+	case "start_date", "due_date":
+		// Once a container has descendants its dates are derived (see
+		// rollupParentDates), so setting them directly is rejected. A childless
+		// epic/feature can still hold a date (e.g. an ADO-imported placeholder).
+		var typ string
+		if err := d.QueryRow(`SELECT type FROM tasks WHERE id = ?`, id).Scan(&typ); err != nil {
+			return err
+		}
+		if typ == "epic" || typ == "feature" {
+			var hasChild bool
+			_ = d.QueryRow(`SELECT EXISTS(SELECT 1 FROM tasks WHERE parent_id = ?)`, id).Scan(&hasChild)
+			if hasChild {
+				return validationErrf("%s is derived from descendant tasks for this %s; set it on the tasks instead", field, typ)
+			}
+		}
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	query := fmt.Sprintf(`UPDATE tasks SET %s = ?, updated_at = ? WHERE id = ?`, field)
