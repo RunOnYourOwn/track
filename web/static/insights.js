@@ -80,9 +80,9 @@ function buildThroughputCard(data) {
 
   const bars = rows.map(r => `
     <div class="chart-row">
-      <div class="chart-label">
+      <div class="chart-label throughput-label">
         <span class="badge badge-prefix">${escHtml(r.prefix)}</span>
-        <span style="color:#8b949e;font-size:12px;margin-left:6px">${escHtml(r.name)}</span>
+        <span class="chart-name" title="${escHtml(r.name)}">${escHtml(r.name)}</span>
       </div>
       <div class="bar-track">
         <div class="bar-fill" style="width:${pct(r.done, maxDone)}%;background:#3fb950" title="${r.done} done"></div>

@@ -1088,6 +1088,7 @@ type dashboardProject struct {
 	Prefix      string     `json:"prefix"`
 	Name        string     `json:"name"`
 	Phase       string     `json:"phase"`
+	PhaseType   string     `json:"phase_type"`
 	Counts      taskCounts `json:"counts"`
 	HealthScore int        `json:"health_score"`
 }
@@ -1141,6 +1142,7 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 			Prefix:      p.Prefix,
 			Name:        p.Name,
 			Phase:       p.Phase,
+			PhaseType:   p.PhaseType,
 			Counts:      counts,
 			HealthScore: score,
 		})

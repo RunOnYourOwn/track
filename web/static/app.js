@@ -197,10 +197,15 @@ function statusBadge(s) {
   return `<span class="status-badge ${cls}">${escHtml(label)}</span>`;
 }
 
-function phaseBadge(phase) {
-  if (!phase) return '';
-  const cls = /^[a-z0-9_-]+$/i.test(phase) ? phase.toLowerCase() : 'default';
-  return `<span class="phase-badge ${cls}">${escHtml(phase)}</span>`;
+// Color by phase_type (the categorical field: discovery|design|build|stabilize|
+// maintain), label with the free-text phase milestone (e.g. "MVP1") when set,
+// else the phase_type name — so every project shows a consistent, meaningful badge.
+function phaseBadge(phase, phaseType) {
+  const type = (phaseType || '').toLowerCase();
+  const cls = /^(discovery|design|build|stabilize|maintain)$/.test(type) ? type : 'default';
+  const label = phase || (type ? type.charAt(0).toUpperCase() + type.slice(1) : '');
+  if (!label) return '';
+  return `<span class="phase-badge ${cls}" title="${escHtml(type || 'phase')}">${escHtml(label)}</span>`;
 }
 
 function healthDots(score) {
@@ -351,9 +356,9 @@ async function renderDashboard() {
             <span class="project-prefix">${escHtml(p.prefix)}</span>
             ${healthDots(healthScore)}
           </div>
-          <div class="project-name">${escHtml(p.name)}</div>
+          <div class="project-name" title="${escHtml(p.name)}">${escHtml(p.name)}</div>
           <div class="project-meta">
-            ${phaseBadge(p.phase)}
+            ${phaseBadge(p.phase, p.phase_type)}
             <span class="text-muted" style="font-size:12px">${pct}% done</span>
           </div>
           <div class="counts-row">
