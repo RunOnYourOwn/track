@@ -6,14 +6,15 @@ import (
 )
 
 // Combined relationship graph, computed server-side. Nodes are laid out by their
-// hierarchy depth (epic→feature→task→subtask); edges are tagged "contains"
-// (parent→child) or "blocks" (dependency). The critical path is the longest
-// chain through the blocks edges. The UI keeps only view-specific layout
-// (within-layer ordering, coordinate math, rendering).
+// longest path over both relationship kinds, so a node sits right of its parent
+// AND of anything that blocks it; edges are tagged "contains" (parent→child) or
+// "blocks" (dependency). The critical path is the longest chain through the
+// blocks edges. The UI keeps only view-specific layout (within-layer ordering,
+// coordinate math, rendering).
 
 type GraphNode struct {
 	ID       string `json:"id"`
-	Layer    int    `json:"layer"` // hierarchy depth: epics at 0, their features at 1, ...
+	Layer    int    `json:"layer"` // column: longest path over contains+blocks edges (epics/roots at 0)
 	Critical bool   `json:"critical"`
 }
 
@@ -31,9 +32,10 @@ type Graph struct {
 }
 
 // ComputeGraph returns every task (honoring includeDone) as a node positioned by
-// its hierarchy depth, with parent→child "contains" edges and "blocks"
-// dependency edges. The critical path is the longest blocks chain; blocks cycles
-// are detected (their back-edges ignored) and reported via HasCycle.
+// its longest path over the combined contains+blocks edge set, with parent→child
+// "contains" edges and "blocks" dependency edges. The critical path is the
+// longest blocks chain; cycles in either relationship are detected (their
+// back-edges ignored) and reported via HasCycle.
 func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, error) {
 	tasks, err := ListTasks(conn, ListTaskOpts{ProjectID: projectID})
 	if err != nil {
@@ -70,24 +72,6 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return lessBySeq(ids[i], ids[j]) })
-
-	// Hierarchy depth. The parent chain is acyclic (parent_id is cycle-guarded on
-	// write), so plain memoized recursion is safe.
-	depth := map[string]int{}
-	var hdepth func(id string) int
-	hdepth = func(id string) int {
-		if d, ok := depth[id]; ok {
-			return d
-		}
-		p, ok := parentOf[id]
-		if !ok {
-			depth[id] = 0
-			return 0
-		}
-		d := hdepth(p) + 1
-		depth[id] = d
-		return d
-	}
 
 	var edges []GraphEdge
 	for _, id := range ids {
@@ -159,10 +143,52 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 	}
 	critical := criticalPath(blockIDs, blocksPreds, bdepth)
 
+	// Layout layer = longest path over BOTH contains and blocks edges, so a node
+	// sits to the right of its parent AND of anything that blocks it. Hierarchy
+	// depth alone left a blocked task in the same column as its blocker, forcing
+	// the blocks edge to bow backward; folding blocks into the layer makes every
+	// dependency flow left→right. The combined predecessor graph can cycle (e.g. a
+	// child that blocks its parent), so this DFS breaks back-edges like the
+	// critical-path pass above.
+	combinedPreds := map[string][]string{}
+	for _, id := range ids {
+		var ps []string
+		if p, ok := parentOf[id]; ok {
+			ps = append(ps, p)
+		}
+		ps = append(ps, blocksPreds[id]...)
+		if len(ps) > 0 {
+			combinedPreds[id] = ps
+		}
+	}
+
+	layerOf := map[string]int{}
+	lstate := map[string]int{}
+	var layer func(id string) int
+	layer = func(id string) int {
+		if lstate[id] == 2 {
+			return layerOf[id]
+		}
+		lstate[id] = 1
+		best := 0
+		for _, p := range combinedPreds[id] {
+			if lstate[p] == 1 {
+				hasCycle = true // back-edge: ignore it
+				continue
+			}
+			if l := layer(p) + 1; l > best {
+				best = l
+			}
+		}
+		lstate[id] = 2
+		layerOf[id] = best
+		return best
+	}
+
 	maxLayer := 0
 	nodes := make([]GraphNode, 0, len(ids))
 	for _, id := range ids {
-		d := hdepth(id)
+		d := layer(id)
 		if d > maxLayer {
 			maxLayer = d
 		}
