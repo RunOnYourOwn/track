@@ -88,6 +88,18 @@ func TestProjectsEndpoints(t *testing.T) {
 	if updated.TaskSort != "due" {
 		t.Fatalf("task_sort not persisted: got %q want due", updated.TaskSort)
 	}
+
+	// phase_type: invalid → 400; valid → 200
+	resp = doJSON(t, "PATCH", srv.URL+"/api/projects/WEB", `{"phase_type":"nope"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid phase_type: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = doJSON(t, "PATCH", srv.URL+"/api/projects/WEB", `{"phase_type":"stabilize"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid phase_type: got %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 func TestTaskCreateValidationHTTP(t *testing.T) {

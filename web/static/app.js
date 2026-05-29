@@ -503,6 +503,91 @@ function _openCreateProject() {
   document.getElementById('cp-prefix').focus();
 }
 
+// Human labels for the per-project task sort modes (mirrors db.ValidTaskSorts).
+const TASK_SORT_LABELS = {
+  priority: 'Priority',
+  manual:   'Manual order',
+  created:  'Created (age)',
+  due:      'Due date',
+};
+
+// Per-project settings panel: edit name, phase, phase type, WIP limit, and the
+// task sort mode. PATCHes only what changed, then runs onSaved (typically a view
+// reload so the new sort/WIP take effect).
+function _openProjectSettings(prefix, project, onSaved) {
+  const p = project || {};
+  const phaseTypes = ['discovery', 'design', 'build', 'stabilize', 'maintain'];
+  const overlay = document.createElement('div');
+  overlay.className = 'tt-modal-overlay';
+  overlay.id = 'project-settings-overlay';
+  overlay.innerHTML = `
+    <div class="tt-modal" role="dialog" aria-label="Project settings">
+      <div class="tt-modal-title">${escHtml(prefix)} settings</div>
+      <div class="tt-modal-field">
+        <label class="tt-modal-label">Name</label>
+        <input class="tt-modal-input" id="ps-name" value="${escHtml(p.name || '')}">
+      </div>
+      <div class="tt-modal-row">
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Phase</label>
+          <input class="tt-modal-input" id="ps-phase" value="${escHtml(p.phase || '')}" placeholder="e.g. MVP1">
+        </div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Phase Type</label>
+          <select class="tt-modal-input" id="ps-phase-type">
+            ${phaseTypes.map(pt => `<option value="${pt}" ${p.phase_type === pt ? 'selected' : ''}>${pt}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="tt-modal-row">
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">WIP Limit</label>
+          <input class="tt-modal-input" id="ps-wip" type="number" min="1" max="50" value="${(p.wip_limit || 3)}">
+        </div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Task Sort</label>
+          <select class="tt-modal-input" id="ps-sort">
+            ${Object.keys(TASK_SORT_LABELS).map(m => `<option value="${m}" ${(p.task_sort || 'priority') === m ? 'selected' : ''}>${TASK_SORT_LABELS[m]}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="tt-modal-actions">
+        <div></div>
+        <div style="display:flex;gap:8px;">
+          <button class="tt-modal-btn" id="ps-cancel">Cancel</button>
+          <button class="tt-modal-btn primary" id="ps-save">Save</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('ps-cancel').addEventListener('click', () => overlay.remove());
+  document.getElementById('ps-save').addEventListener('click', async () => {
+    const body = {};
+    const name = document.getElementById('ps-name').value.trim();
+    if (name && name !== p.name) body.name = name;
+    const phase = document.getElementById('ps-phase').value.trim();
+    if (phase !== (p.phase || '')) body.phase = phase;
+    const phaseType = document.getElementById('ps-phase-type').value;
+    if (phaseType !== (p.phase_type || 'build')) body.phase_type = phaseType;
+    const wip = parseInt(document.getElementById('ps-wip').value, 10);
+    if (!isNaN(wip) && wip >= 1 && wip !== p.wip_limit) body.wip_limit = wip;
+    const sort = document.getElementById('ps-sort').value;
+    if (sort !== (p.task_sort || 'priority')) body.task_sort = sort;
+
+    try {
+      if (Object.keys(body).length > 0) await api.patch(`/projects/${encodeURIComponent(prefix)}`, body);
+      overlay.remove();
+      if (onSaved) onSaved();
+    } catch (err) {
+      alert('Failed to save settings: ' + (err.message || err));
+    }
+  });
+
+  document.getElementById('ps-name').focus();
+}
+
 // =========================================================
 // Route registrations
 // =========================================================

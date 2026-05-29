@@ -116,7 +116,8 @@ function _statsBar() {
         ${blocked > 0 ? `<span class="stat-chip blocked">${blocked} blocked</span>` : ''}
         <span class="stat-chip todo">${todo} backlog</span>
         <span class="stat-chip total">${total} total</span>
-        <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 3) ? 'wip-over' : ''}" id="stats-wip-chip" title="Click to set WIP limit — controls max items in progress">WIP: ${inProgress}/${(_project && _project.wip_limit) || 3}</span>
+        <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 3) ? 'wip-over' : ''}" id="stats-wip-chip" title="Project settings — WIP limit, sort, phase">WIP: ${inProgress}/${(_project && _project.wip_limit) || 3}</span>
+        <span class="stat-chip" id="stats-sort-chip" title="Task sort order — click for project settings">Sort: ${TASK_SORT_LABELS[(_project && _project.task_sort) || 'priority'] || 'Priority'}</span>
       </div>
     </div>
   `;
@@ -170,10 +171,12 @@ function _filterBar() {
 
 function _renderColumn(col, tasks) {
   // Every leaf task (any nesting depth) is a card, placed by its OWN status.
+  // Order is preserved from the API, which returns tasks in the project's
+  // configured task_sort order (server-side, the one source of truth) — the board
+  // must not re-sort or it would override the chosen mode.
   const colTasks = tasks
     .filter(t => (t.type || 'task') === 'task' && _columnIdForStatus(t.status) === col.id
-      && (_showCancelled || t.status !== 'cancelled')) // cancelled hidden unless toggled
-    .sort(byPriority);
+      && (_showCancelled || t.status !== 'cancelled')); // cancelled hidden unless toggled
 
   const isInProgress = col.id === 'in_progress';
   const totalCards = colTasks.length;
@@ -292,18 +295,12 @@ function _attachBoardListeners() {
     });
   }
 
-  // WIP limit click to edit (column header + stats chip)
-  document.querySelectorAll('#wip-limit-display, #stats-wip-chip').forEach(el => {
+  // WIP / sort chips (and the in-column WIP display) open the project settings
+  // panel — the single home for WIP limit, task sort, phase, and name.
+  document.querySelectorAll('#wip-limit-display, #stats-wip-chip, #stats-sort-chip').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const current = (_project && _project.wip_limit) || 3;
-      const input = prompt('WIP limit for In Progress:', current);
-      if (input === null) return;
-      const val = parseInt(input, 10);
-      if (isNaN(val) || val < 1) return;
-      _project.wip_limit = val;
-      api.patch(`/projects/${_prefix}`, { wip_limit: val }).catch(() => {});
-      _drawBoard();
+      _openProjectSettings(_prefix, _project, () => renderKanban(_prefix));
     });
   });
 

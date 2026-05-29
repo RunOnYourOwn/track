@@ -108,6 +108,11 @@ var ValidTaskSorts = map[string]bool{
 	"due":      true, // due date soonest first (no due last), then priority
 }
 
+// ValidPhaseTypes are the lifecycle phases a project can be in.
+var ValidPhaseTypes = map[string]bool{
+	"discovery": true, "design": true, "build": true, "stabilize": true, "maintain": true,
+}
+
 func UpdateProjectField(d *sql.DB, id, field, value string) error {
 	if !allowedProjectFields[field] {
 		return fmt.Errorf("UpdateProjectField: disallowed field %q", field)
