@@ -179,6 +179,31 @@ func TestTaskCreateValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestUpdateTaskClearsDescription(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"CLR","name":"C"}`).Body.Close()
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/CLR/tasks", `{"title":"t","description":"original"}`)
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&task)
+	resp.Body.Close()
+
+	// An explicit empty description must clear it (description is *string, so ""
+	// is distinguishable from "field omitted = leave unchanged").
+	doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"description":""}`).Body.Close()
+
+	resp = doJSON(t, "GET", srv.URL+"/api/tasks/"+task.ID, "")
+	var got struct {
+		Description string `json:"description"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	resp.Body.Close()
+	if got.Description != "" {
+		t.Fatalf("description not cleared: got %q", got.Description)
+	}
+}
+
 // estimate_hours can be cleared back to 0 (the old >0 guard silently dropped a
 // 0, so an estimate could never be un-set), and a negative value is rejected.
 func TestUpdateTaskClearsEstimate(t *testing.T) {
@@ -207,6 +232,86 @@ func TestUpdateTaskClearsEstimate(t *testing.T) {
 	resp = doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"estimate_hours":-1}`)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("negative estimate_hours: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// MED-5: a PATCH that sets an invalid status is a client error → 400, not a 500.
+func TestUpdateTaskInvalidStatusReturns400(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"STS","name":"S"}`).Body.Close()
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/STS/tasks", `{"title":"t"}`)
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&task)
+	resp.Body.Close()
+
+	resp = doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"status":"bogus"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid status: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// A valid status change still succeeds.
+	resp = doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"status":"in_progress"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid status: got %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+// MED-14: adding/removing a sprint-task with an unknown sprint or task id must
+// return 404 rather than silently succeeding.
+func TestSprintTaskExistenceChecks(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"SPT","name":"S"}`).Body.Close()
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/SPT/tasks", `{"title":"t"}`)
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&task)
+	resp.Body.Close()
+
+	resp = doJSON(t, "POST", srv.URL+"/api/projects/SPT/sprints", `{"name":"Sprint 1"}`)
+	var sprint struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&sprint)
+	resp.Body.Close()
+
+	// Unknown sprint → 404.
+	resp = doJSON(t, "POST", srv.URL+"/api/sprints/NOSUCH/tasks/"+task.ID, "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("add to unknown sprint: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Unknown task → 404.
+	resp = doJSON(t, "POST", srv.URL+"/api/sprints/"+sprint.ID+"/tasks/NOSUCH", "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("add unknown task: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Both valid → 200.
+	resp = doJSON(t, "POST", srv.URL+"/api/sprints/"+sprint.ID+"/tasks/"+task.ID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid add: got %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Remove with unknown sprint → 404.
+	resp = doJSON(t, "DELETE", srv.URL+"/api/sprints/NOSUCH/tasks/"+task.ID, "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("remove from unknown sprint: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// Valid remove → 200.
+	resp = doJSON(t, "DELETE", srv.URL+"/api/sprints/"+sprint.ID+"/tasks/"+task.ID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid remove: got %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
 }

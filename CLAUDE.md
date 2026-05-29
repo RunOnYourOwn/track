@@ -106,6 +106,7 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | Tool | Purpose |
 |------|---------|
 | `track_project_list` | List all projects |
+| `track_project_create` | Create a project (prefix + name required; optional phase/phase_type/wip_limit) |
 | `track_project_update` | Edit project settings (name/phase/phase_type/wip_limit/task_sort) |
 | `track_project_delete` | Delete a project + all its data (cascade; requires `confirm` = prefix) |
 | `track_task_list` | List tasks (filter by project/status/priority) |
@@ -116,6 +117,7 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_task_cancel` | Cancel a task (terminal) with an optional reason |
 | `track_task_next` | Suggest highest-priority unblocked task |
 | `track_task_link` | Create dependency (from blocks to) |
+| `track_task_unlink` | Remove dependency (from blocks to) |
 | `track_task_update` | Edit task fields (title, priority, start_date, due_date, parent, …) |
 | `track_task_delete` | Delete a task |
 | `track_session_start` | Start a dev session |

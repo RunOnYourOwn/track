@@ -158,9 +158,11 @@ function _renderTimeline() {
   // Orphan tasks (no visible parent)
   orphanTasks.forEach(t => _addTaskRow(t, 0));
 
-  // Determine time range — keep it tight around actual data
-  const allDates = _tasks.map(t => new Date(t.created_at));
-  _tasks.filter(t => t.due_date).forEach(t => allDates.push(new Date(t.due_date)));
+  // Determine time range — keep it tight around VISIBLE (filtered) data so the
+  // axis starts at the earliest task currently rendered, not at done tasks that
+  // are hidden by the show-done toggle.
+  const allDates = activeTasks.map(t => new Date(t.created_at));
+  activeTasks.filter(t => t.due_date).forEach(t => allDates.push(new Date(t.due_date)));
   _sprints.forEach(s => {
     if (s.start_date) allDates.push(new Date(s.start_date));
     if (s.end_date) allDates.push(new Date(s.end_date));

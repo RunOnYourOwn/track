@@ -239,6 +239,80 @@ func TestSessionEndWrongProjectErrors(t *testing.T) {
 	}
 }
 
+func TestProjectCreateViaTool(t *testing.T) {
+	conn := db.OpenTestDB(t)
+
+	if _, err := handleProjectCreate(conn, map[string]any{"prefix": "NEW", "name": "New Proj"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	p, err := db.GetProjectByPrefix(conn, "NEW")
+	if err != nil {
+		t.Fatalf("project NEW should exist: %v", err)
+	}
+	if p.Name != "New Proj" {
+		t.Errorf("name = %q, want %q", p.Name, "New Proj")
+	}
+	if p.WIPLimit != 3 {
+		t.Errorf("wip_limit = %d, want default 3", p.WIPLimit)
+	}
+
+	// Optional wip_limit + phase_type are honored.
+	if _, err := handleProjectCreate(conn, map[string]any{"prefix": "WIP", "name": "W", "wip_limit": float64(5), "phase_type": "design"}); err != nil {
+		t.Fatalf("create with options: %v", err)
+	}
+	wp, _ := db.GetProjectByPrefix(conn, "WIP")
+	if wp.WIPLimit != 5 || wp.PhaseType != "design" {
+		t.Errorf("got wip=%d phase_type=%q, want 5/design", wp.WIPLimit, wp.PhaseType)
+	}
+
+	// prefix and name are required.
+	if _, err := handleProjectCreate(conn, map[string]any{"name": "X"}); err == nil {
+		t.Error("expected error when prefix missing")
+	}
+	if _, err := handleProjectCreate(conn, map[string]any{"prefix": "X"}); err == nil {
+		t.Error("expected error when name missing")
+	}
+	if _, err := handleProjectCreate(conn, map[string]any{"prefix": "BAD", "name": "B", "phase_type": "nope"}); err == nil {
+		t.Error("expected error for invalid phase_type")
+	}
+}
+
+func TestTaskUnlinkViaTool(t *testing.T) {
+	conn := db.OpenTestDB(t)
+	if _, err := db.CreateProject(conn, "UL", "UL Proj", "", "", "", "", 3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handleTaskCreate(conn, map[string]any{"project": "UL", "title": "blocker"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handleTaskCreate(conn, map[string]any{"project": "UL", "title": "blocked"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := handleTaskLink(conn, map[string]any{"from_id": "UL-1", "to_id": "UL-2"}); err != nil {
+		t.Fatalf("link: %v", err)
+	}
+	toID, err := resolveTaskID(conn, "UL-2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deps, _ := db.GetBlockers(conn, toID); len(deps) != 1 {
+		t.Fatalf("expected 1 dependency after link, got %d", len(deps))
+	}
+
+	if _, err := handleTaskUnlink(conn, map[string]any{"from_id": "UL-1", "to_id": "UL-2"}); err != nil {
+		t.Fatalf("unlink: %v", err)
+	}
+	if deps, _ := db.GetBlockers(conn, toID); len(deps) != 0 {
+		t.Fatalf("expected 0 dependencies after unlink, got %d", len(deps))
+	}
+
+	// from_id / to_id are required.
+	if _, err := handleTaskUnlink(conn, map[string]any{"from_id": "UL-1"}); err == nil {
+		t.Error("expected error when to_id missing")
+	}
+}
+
 func TestResolveTaskID(t *testing.T) {
 	conn := db.OpenTestDB(t)
 	if _, err := db.CreateProject(conn, "RID", "R", "", "", "", "", 3); err != nil {

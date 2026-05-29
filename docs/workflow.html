@@ -774,7 +774,7 @@
                 <p>Launches in background, auto-creates database at ~/.track/track.db</p>
                 <div class="cmd">
                     track serve<br>
-                    <span class="comment"># → Track: http://localhost:3012 (PID 12345)</span>
+                    <span class="comment"># → Track: http://localhost:3011 (PID 12345)</span>
                 </div>
             </div>
 
@@ -789,7 +789,7 @@
                 <p>What the kickoff covers:</p>
                 <div class="cmd">
                     <span class="comment"># 1. Create the project</span><br>
-                    track project create <span class="highlight">PROJ</span> "My Project"<br><br>
+                    track project create --prefix <span class="highlight">PROJ</span> --name "My Project"<br><br>
                     <span class="comment"># 2. Gather requirements (through conversation)</span><br>
                     <span class="comment">#    - What problem are you solving?</span><br>
                     <span class="comment">#    - Who are the stakeholders?</span><br>
@@ -868,7 +868,7 @@
                 <p>What it does:</p>
                 <div class="cmd">
                     <span class="comment"># 1. Creates project</span><br>
-                    track project create PROJ "My Project"<br><br>
+                    track project create --prefix PROJ --name "My Project"<br><br>
                     <span class="comment"># 2. Reads existing sources:</span><br>
                     <span class="comment">#    - docs/sprint-tasks.md</span><br>
                     <span class="comment">#    - CLAUDE.md backlog section</span><br>

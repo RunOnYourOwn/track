@@ -2,11 +2,18 @@ package db
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/RunOnYourOwn/track/internal/models"
 )
+
+// ErrDecisionAlreadyDecided is returned by ResolveDecision when the target
+// decision exists but is already in the "decided" state. Callers compare with
+// errors.Is so a message change can't reclassify the error (e.g. flip a 409 to a
+// 500 in the HTTP layer).
+var ErrDecisionAlreadyDecided = errors.New("decision is already decided")
 
 // --- Decisions ---
 
@@ -126,9 +133,11 @@ func ResolveDecision(db *sql.DB, id, decision, rationale string) error {
 		var status string
 		switch scanErr := db.QueryRow(`SELECT status FROM decisions WHERE id = ?`, id).Scan(&status); scanErr {
 		case sql.ErrNoRows:
-			return fmt.Errorf("decision %q not found", id)
+			// Wrap the sentinel so callers can errors.Is(err, sql.ErrNoRows)
+			// regardless of the human-readable message.
+			return fmt.Errorf("decision %q not found: %w", id, sql.ErrNoRows)
 		case nil:
-			return fmt.Errorf("decision %q is already decided", id)
+			return fmt.Errorf("decision %q: %w", id, ErrDecisionAlreadyDecided)
 		default:
 			return scanErr
 		}

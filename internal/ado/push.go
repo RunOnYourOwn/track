@@ -104,7 +104,13 @@ func pushTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 		ctx.LastSyncedAt = time.Now().UTC().Format(time.RFC3339)
 		ctxJSON, _ := json.Marshal(ctx)
 		if err := db.SyncAgentContext(conn, task.ID, string(ctxJSON)); err != nil {
+			// The work-item PATCH succeeded but the local agent_context didn't
+			// sync, so the task stays locally dirty and will re-push every run.
+			// Count it as a failure so this silent partial-failure is visible
+			// rather than masquerading as a clean push.
 			fmt.Printf("  warning: update context for %s: %v\n", task.ID, err)
+			stats.Failed++
+			continue
 		}
 
 		stats.Pushed++
