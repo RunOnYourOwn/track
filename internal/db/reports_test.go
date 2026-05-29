@@ -1,0 +1,84 @@
+package db
+
+import "testing"
+
+func TestComputeVelocity(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "VEL")
+
+	mk := func(title string, est float64) string {
+		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: "task", EstimateHours: est})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk.ID
+	}
+	a, b := mk("A", 2), mk("B", 4)
+	if err := CompleteTask(d, a, 3, ""); err != nil { // est 2 / act 3
+		t.Fatal(err)
+	}
+	if err := CompleteTask(d, b, 4, ""); err != nil { // est 4 / act 4
+		t.Fatal(err)
+	}
+
+	weeks, err := ComputeVelocity(d, pid, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both completed "now" → one ISO-week bucket.
+	if len(weeks) != 1 {
+		t.Fatalf("expected 1 week bucket, got %d", len(weeks))
+	}
+	w := weeks[0]
+	if w.Done != 2 {
+		t.Fatalf("done: got %d want 2", w.Done)
+	}
+	if w.EstHours != 6 {
+		t.Fatalf("est hours: got %v want 6", w.EstHours)
+	}
+	if w.ActHours != 7 {
+		t.Fatalf("act hours: got %v want 7", w.ActHours)
+	}
+	// min(6,7)/max(6,7)*100 ≈ 85.7
+	if w.Accuracy < 85 || w.Accuracy > 86 {
+		t.Fatalf("accuracy: got %v want ~85.7", w.Accuracy)
+	}
+}
+
+func TestRecordSnapshot(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "SNP")
+	proj, err := GetProjectByPrefix(d, "SNP")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mk := func(title string) string {
+		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: "task"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk.ID
+	}
+	a := mk("A")
+	mk("B")
+	if err := CompleteTask(d, a, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := RecordSnapshot(d, proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snap.Total != 2 || snap.Done != 1 || snap.Todo != 1 {
+		t.Fatalf("snapshot counts wrong: total=%d done=%d todo=%d (want 2/1/1)", snap.Total, snap.Done, snap.Todo)
+	}
+	// It must be persisted, not just computed.
+	var count int
+	if err := d.QueryRow(`SELECT COUNT(*) FROM snapshots WHERE project_id = ?`, pid).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("snapshot not persisted: row count %d want 1", count)
+	}
+}
