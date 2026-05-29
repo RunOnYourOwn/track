@@ -11,6 +11,8 @@ let _allTasks = [];
 let _graph = { nodes: [], edges: [], max_layer: 0, has_cycle: false };
 let _showDone = false;
 let _collapsed = new Set(); // container node ids whose subtree is folded away
+let _focusRoot = '';        // when set, show only this node + its subtree
+let _critOnly = false;      // when true, show only critical-path nodes
 
 async function renderGraph(prefix) {
   _prefix = prefix;
@@ -62,6 +64,13 @@ function _toggleCollapse(id) {
   if (_collapsed.has(id)) _collapsed.delete(id);
   else _collapsed.add(id);
   _drawGraph();
+}
+
+// All ids in a node's subtree (the node itself + every descendant).
+function _subtreeIds(rootId, childrenOf) {
+  const ids = new Set([rootId]);
+  (function walk(id) { (childrenOf[id] || []).forEach(c => { ids.add(c.id); walk(c.id); }); })(rootId);
+  return ids;
 }
 
 function _drawGraph() {
@@ -129,15 +138,27 @@ function _drawGraph() {
   }
   connectedTasks.forEach(t => countDesc(t.id));
 
+  // Filters that compose with collapse: focus narrows to one subtree; crit-only
+  // keeps just the critical-path nodes (so blocks edges among them survive while
+  // the non-critical hierarchy skeleton drops out). Both are view filters over the
+  // fetched graph. A focus root that no longer exists (e.g. after a done toggle)
+  // is treated as "no focus".
+  const focusValid = _focusRoot && connectedIds.has(_focusRoot) && isCollapsible(_focusRoot);
+  const focusSet = focusValid ? _subtreeIds(_focusRoot, childrenOf) : null;
+  const inScope = (id) => (!focusSet || focusSet.has(id)) && (!_critOnly || criticalPath.has(id));
+
   const hidden = new Set();
   connectedTasks.forEach(t => {
+    if (!inScope(t.id)) return;
     let p = parentById.get(t.id);
-    while (p) { if (_collapsed.has(p) && isCollapsible(p)) { hidden.add(t.id); break; } p = parentById.get(p); }
+    while (p) { if (_collapsed.has(p) && isCollapsible(p) && inScope(p)) { hidden.add(t.id); break; } p = parentById.get(p); }
   });
-  const visibleTasks = connectedTasks.filter(t => !hidden.has(t.id));
+  const visibleTasks = connectedTasks.filter(t => inScope(t.id) && !hidden.has(t.id));
   const visibleIds = new Set(visibleTasks.map(t => t.id));
 
-  const nearestVisible = (id) => { let c = id; while (c && hidden.has(c)) c = parentById.get(c); return c; };
+  // Map any endpoint to its nearest visible ancestor (skipping collapsed-away,
+  // out-of-focus, or non-critical nodes); undefined if none is visible.
+  const nearestVisible = (id) => { let c = id; while (c && !visibleIds.has(c)) c = parentById.get(c); return c; };
   const seenEdge = new Set();
   const drawEdges = [];
   validEdges.forEach(e => {
@@ -198,10 +219,20 @@ function _drawGraph() {
 
   const PRIORITY_COLORS = { urgent: '#f85149', high: '#d29922', medium: '#58a6ff', low: '#484f58' };
 
-  // Render with toolbar (+ pan/zoom controls)
+  // Focus dropdown lists the container nodes (epics/features), ordered by column.
+  const containers = connectedTasks
+    .filter(t => isCollapsible(t.id))
+    .sort((a, b) => ((layer.get(a.id) ?? 0) - (layer.get(b.id) ?? 0)) || ((a.seq || 0) - (b.seq || 0)));
+  const focusOptions = containers
+    .map(t => `<option value="${t.id}" ${_focusRoot === t.id ? 'selected' : ''}>${escHtml(t.title)} · ${t.type}</option>`)
+    .join('');
+
+  // Render with toolbar (filters on the left + pan/zoom controls on the right)
   render(`<div class="page-graph">
     <div class="timeline-toolbar">
       ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
+      ${containers.length ? `<label class="filter-checkbox" style="margin-left:12px;"><span class="text-muted">Focus</span><select id="graph-focus" class="filter-select" style="margin-left:6px;"><option value="">All</option>${focusOptions}</select></label>` : ''}
+      <label class="filter-checkbox" style="margin-left:12px;"><input type="checkbox" id="graph-crit-only" ${_critOnly ? 'checked' : ''}><span class="text-muted">Critical path only</span></label>
       ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;">⚠ dependency cycle detected</span>` : ''}
       <span style="margin-left:auto;display:inline-flex;gap:6px;">
         ${_collapsed.size ? `<button class="btn-ghost btn-sm" id="graph-expand-all" title="Expand every collapsed node">Expand all</button>` : ''}
@@ -216,8 +247,14 @@ function _drawGraph() {
   const showDoneEl = document.getElementById('graph-show-done');
   if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
   document.getElementById('graph-expand-all')?.addEventListener('click', e => { e.stopPropagation(); _collapsed.clear(); _drawGraph(); });
+  document.getElementById('graph-focus')?.addEventListener('change', function() { _focusRoot = this.value; _drawGraph(); });
+  document.getElementById('graph-crit-only')?.addEventListener('change', function() { _critOnly = this.checked; _drawGraph(); });
 
   const container = document.getElementById('graph-container');
+  if (visibleTasks.length === 0) {
+    container.innerHTML = `<div class="empty-state">${_critOnly ? 'No tasks are on the critical path.' : 'No nodes match the current filter.'}</div>`;
+    return;
+  }
   const containerRect = container.getBoundingClientRect();
 
   // The SVG fills the viewport; all content lives in a single pannable/zoomable
