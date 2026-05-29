@@ -2,10 +2,30 @@ package mcp
 
 import (
 	"database/sql"
+	"encoding/json"
 	"testing"
 
 	"github.com/RunOnYourOwn/track/internal/db"
 )
+
+// A panic in a tool handler must come back as a JSON-RPC internal error, not
+// crash the stdio session. A tools/call against a nil DB conn panics inside the
+// handler (nil *sql.DB query), exercising the recover wrapper.
+func TestSafeHandleRequestRecoversPanic(t *testing.T) {
+	req := Request{
+		JSONRPC: "2.0",
+		ID:      float64(1),
+		Method:  "tools/call",
+		Params:  json.RawMessage(`{"name":"track_project_list","arguments":{}}`),
+	}
+	resp := safeHandleRequest(nil, req) // nil conn → panic inside the handler
+	if resp == nil || resp.Error == nil {
+		t.Fatalf("expected a recovered error response, got %+v", resp)
+	}
+	if resp.Error.Code != -32603 {
+		t.Fatalf("expected JSON-RPC internal error -32603, got %d", resp.Error.Code)
+	}
+}
 
 func mustProjectID(t *testing.T, conn *sql.DB, prefix string) string {
 	t.Helper()
