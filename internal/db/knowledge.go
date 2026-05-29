@@ -136,6 +136,26 @@ func ResolveDecision(db *sql.DB, id, decision, rationale string) error {
 	return nil
 }
 
+// allowedDecisionFields are editable via UpdateDecisionField. The decision /
+// rationale / status are set through ResolveDecision, not here.
+var allowedDecisionFields = map[string]bool{
+	"title": true, "context": true, "options": true, "revisit_by": true, "decided_by": true,
+}
+
+func UpdateDecisionField(d *sql.DB, id, field, value string) error {
+	if !allowedDecisionFields[field] {
+		return fmt.Errorf("UpdateDecisionField: disallowed field %q", field)
+	}
+	res, err := d.Exec(fmt.Sprintf(`UPDATE decisions SET %s = ? WHERE id = ?`, field), value, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func scanDecision(row *sql.Row) (*models.Decision, error) {
 	var d models.Decision
 	var taskID, decidedAt, revisitBy, supersedesID sql.NullString
@@ -240,6 +260,24 @@ func GetLearning(db *sql.DB, id string) (*models.Learning, error) {
 		SELECT id, project_id, task_id, title, body, category, applies_to, created_at
 		FROM learnings WHERE id = ?`, id)
 	return scanLearning(row)
+}
+
+var allowedLearningFields = map[string]bool{
+	"title": true, "body": true, "category": true, "applies_to": true,
+}
+
+func UpdateLearningField(d *sql.DB, id, field, value string) error {
+	if !allowedLearningFields[field] {
+		return fmt.Errorf("UpdateLearningField: disallowed field %q", field)
+	}
+	res, err := d.Exec(fmt.Sprintf(`UPDATE learnings SET %s = ? WHERE id = ?`, field), value, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func ListLearnings(db *sql.DB, projectID, category string) ([]models.Learning, error) {
