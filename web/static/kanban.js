@@ -417,12 +417,5 @@ function _parentLabel(task) {
   return { label: `${short} ▸`, full: `${pid}: ${title}` };
 }
 
-function _getFeatureName(task) {
-  if (!task.parent_id || (task.type || 'task') !== 'task') return null;
-  const parent = _tasks.find(t => t.id === task.parent_id);
-  if (parent && (parent.type || 'task') === 'feature') return parent.title;
-  return null;
-}
-
 return renderKanban;
 })();

@@ -9,18 +9,6 @@ import (
 	"github.com/RunOnYourOwn/track/internal/models"
 )
 
-func nextSeq(db *sql.DB, projectID string) (int, error) {
-	var max sql.NullInt64
-	err := db.QueryRow(`SELECT MAX(seq) FROM tasks WHERE project_id = ?`, projectID).Scan(&max)
-	if err != nil {
-		return 0, err
-	}
-	if !max.Valid {
-		return 1, nil
-	}
-	return int(max.Int64) + 1, nil
-}
-
 type CreateTaskOpts struct {
 	ProjectID            string
 	Title                string
