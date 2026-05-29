@@ -44,9 +44,27 @@ jobs:
           ( cd dist && sha256sum track-* > checksums.txt )
           ls -l dist
 
+      # Release notes come from the matching CHANGELOG.md section (single source of
+      # truth); GitHub's auto-generated "What's Changed" is appended below it.
+      - name: Extract changelog section
+        id: notes
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v ver="$ver" '
+            index($0, "## [" ver "]") == 1 { grab = 1; next }
+            grab && (/^## \[/ || /^\[[^]]+\]: /) { exit }
+            grab { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md || true
+          if [ -s RELEASE_NOTES.md ]; then
+            echo "have_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          body_path: ${{ steps.notes.outputs.have_notes == 'true' && 'RELEASE_NOTES.md' || '' }}
           generate_release_notes: true
           fail_on_unmatched_files: true
