@@ -257,7 +257,76 @@ func ListTasks(db *sql.DB, opts ListTaskOpts) ([]models.Task, error) {
 		}
 		tasks = append(tasks, *t)
 	}
-	return tasks, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Container (epic/feature) dates are derived from their descendants, not set
+	// directly. Roll them up only for a full, unfiltered project fetch — a filtered
+	// subset would miss descendants and compute wrong spans.
+	if opts.ProjectID != "" && len(opts.Status) == 0 && len(opts.Priority) == 0 && opts.Type == "" && opts.ParentID == "" {
+		rollupParentDates(tasks)
+	}
+	return tasks, nil
+}
+
+// rollupParentDates sets each container task's start/due from its descendants:
+// start = earliest descendant start (its start_date, else its creation date),
+// due = latest descendant due_date (empty if none). Leaf tasks are left as-is.
+// Dates are YYYY-MM-DD strings, which sort lexicographically.
+func rollupParentDates(tasks []models.Task) {
+	childIdx := map[string][]int{}
+	for i := range tasks {
+		if p := tasks[i].ParentID; p != nil && *p != "" {
+			childIdx[*p] = append(childIdx[*p], i)
+		}
+	}
+	type span struct{ start, due string }
+	memo := map[string]span{}
+	var compute func(i int) span
+	compute = func(i int) span {
+		t := &tasks[i]
+		if s, ok := memo[t.ID]; ok {
+			return s
+		}
+		kids := childIdx[t.ID]
+		var sp span
+		if len(kids) == 0 {
+			if t.StartDate != nil && *t.StartDate != "" {
+				sp.start = *t.StartDate
+			} else {
+				sp.start = t.CreatedAt.Format("2006-01-02")
+			}
+			if t.DueDate != nil {
+				sp.due = *t.DueDate
+			}
+		} else {
+			for _, ci := range kids {
+				cs := compute(ci)
+				if cs.start != "" && (sp.start == "" || cs.start < sp.start) {
+					sp.start = cs.start
+				}
+				if cs.due != "" && (sp.due == "" || cs.due > sp.due) {
+					sp.due = cs.due
+				}
+			}
+			if sp.start != "" {
+				s := sp.start
+				t.StartDate = &s
+			}
+			if sp.due != "" {
+				d := sp.due
+				t.DueDate = &d
+			} else {
+				t.DueDate = nil
+			}
+		}
+		memo[t.ID] = sp
+		return sp
+	}
+	for i := range tasks {
+		compute(i)
+	}
 }
 
 var validStatuses = map[string]bool{

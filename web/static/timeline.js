@@ -425,40 +425,21 @@ function _renderTimeline() {
   // Task bars
   const priorityColors = { urgent: '#f85149', high: '#d29922', medium: '#58a6ff', low: '#484f58' };
 
-  function _getDescendantRange(parentId, depth) {
-    const directChildren = _tasks.filter(c => c.parent_id === parentId);
-    let allStarts = directChildren.map(c => new Date(c.start_date || c.created_at));
-    let allEnds = directChildren.map(c => c.due_date ? new Date(c.due_date) : _addDays(new Date(c.start_date || c.created_at), 5));
-    if (depth < 3) {
-      directChildren.forEach(c => {
-        const sub = _getDescendantRange(c.id, depth + 1);
-        if (sub) { allStarts.push(sub.start); allEnds.push(sub.end); }
-      });
-    }
-    if (allStarts.length === 0) return null;
-    return { start: d3.min(allStarts), end: d3.max(allEnds) };
-  }
-
   rows.forEach((row, i) => {
     const t = row.task;
     const y = i * ROW_HEIGHT + 2;
     const h = BAR_HEIGHT - 4;
 
-    let start, end;
-
-    if ((row.type === 'epic' || row.type === 'feature') && row.childCount > 0) {
-      const range = _getDescendantRange(t.id, 0);
-      start = range ? range.start : new Date(t.created_at);
-      end = range ? range.end : _addDays(start, 7);
+    // Epic/feature start_date/due_date arrive already rolled up from descendants
+    // (server-side), so every row uses the same per-task geometry.
+    let start = new Date(t.start_date || t.created_at);
+    let end;
+    if (t.due_date) {
+      end = new Date(t.due_date);
+      if (end <= start) end = _addDays(start, 1);
     } else {
-      start = new Date(t.start_date || t.created_at);
-      if (t.due_date) {
-        end = new Date(t.due_date);
-        if (end <= start) end = _addDays(start, 1);
-      } else {
-        const days = row.type === 'epic' ? 14 : row.type === 'feature' ? 7 : 5;
-        end = _addDays(start, days);
-      }
+      const days = row.type === 'epic' ? 14 : row.type === 'feature' ? 7 : 5;
+      end = _addDays(start, days);
     }
 
     const barX = x(start);
