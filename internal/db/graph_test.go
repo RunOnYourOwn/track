@@ -94,3 +94,49 @@ func TestComputeGraph(t *testing.T) {
 		t.Fatal("expected the X↔Y cycle to be detected")
 	}
 }
+
+// The critical path is the longest blocks-chain weighted by estimate hours, not by
+// hop count: a short-but-heavy chain beats a long-but-light one, and CriticalHours
+// reports the summed estimate along it.
+func TestComputeGraphCriticalWeightedByHours(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "GW")
+
+	mk := func(title string, hours float64) string {
+		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: "task", EstimateHours: hours})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tk.ID
+	}
+	must := func(err error) {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Light 3-hop chain A→B→C (3h total) vs heavy 2-hop chain D→E (20h total).
+	a, b, c := mk("A", 1), mk("B", 1), mk("C", 1)
+	must(CreateDependency(d, a, b, "blocks", ""))
+	must(CreateDependency(d, b, c, "blocks", ""))
+	dd, e := mk("D", 10), mk("E", 10)
+	must(CreateDependency(d, dd, e, "blocks", ""))
+
+	g, err := ComputeGraph(d, pid, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crit := map[string]bool{}
+	for _, n := range g.Nodes {
+		crit[n.ID] = n.Critical
+	}
+	if !crit[dd] || !crit[e] {
+		t.Fatalf("heavier-by-hours chain D→E should be critical")
+	}
+	if crit[a] || crit[b] || crit[c] {
+		t.Fatalf("lighter chain A→B→C must not be critical when a heavier chain exists")
+	}
+	if g.CriticalHours != 20 {
+		t.Fatalf("CriticalHours: got %v want 20", g.CriticalHours)
+	}
+}

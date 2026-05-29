@@ -29,6 +29,10 @@ type Graph struct {
 	Edges    []GraphEdge `json:"edges"`
 	MaxLayer int         `json:"max_layer"`
 	HasCycle bool        `json:"has_cycle"` // a dependency (blocks) cycle was detected
+	// CriticalHours is the summed estimate (hours) of the tasks on the critical
+	// path — the longest blocks-chain weighted by per-task effort. It is 0 when no
+	// task on the chain carries an estimate.
+	CriticalHours float64 `json:"critical_hours"`
 }
 
 // ComputeGraph returns every task (honoring includeDone) as a node positioned by
@@ -107,41 +111,84 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 		sort.Slice(ps, func(i, j int) bool { return lessBySeq(ps[i], ps[j]) })
 	}
 
-	// Critical path = longest chain through the blocks edges. Computed over a
-	// separate longest-path depth (NOT the hierarchy depth used for layout).
+	// Critical path = longest chain through the blocks edges, weighted by per-task
+	// effort (estimate hours, falling back to agent-minutes). When no task carries
+	// an estimate we weight every node as 1 so the longest chain is still the most
+	// hops; the reported CriticalHours is the real estimate sum either way (0 when
+	// unestimated). This is a separate longest-path pass from the layout depth.
+	effortByID := map[string]float64{}
+	anyEffort := false
+	for _, t := range tasks {
+		h := t.EstimateHours
+		if h <= 0 && t.EstimateAgentMinutes > 0 {
+			h = float64(t.EstimateAgentMinutes) / 60.0
+		}
+		if h > 0 {
+			anyEffort = true
+		}
+		effortByID[t.ID] = h
+	}
+	weight := func(id string) float64 {
+		if anyEffort {
+			return effortByID[id]
+		}
+		return 1
+	}
+
 	blockIDs := make([]string, 0, len(blockNodes))
 	for id := range blockNodes {
 		blockIDs = append(blockIDs, id)
 	}
 	sort.Slice(blockIDs, func(i, j int) bool { return lessBySeq(blockIDs[i], blockIDs[j]) })
 
-	bdepth := map[string]int{}
+	// bweight[id] = longest weighted blocks-chain ending at id (inclusive);
+	// bpred[id] = the predecessor that realized it (for chain reconstruction).
+	bweight := map[string]float64{}
+	bpred := map[string]string{}
 	state := map[string]int{}
 	hasCycle := false
-	var visit func(id string) int
-	visit = func(id string) int {
+	var visit func(id string) float64
+	visit = func(id string) float64 {
 		if state[id] == 2 {
-			return bdepth[id]
+			return bweight[id]
 		}
 		state[id] = 1
-		best := 0
-		for _, p := range blocksPreds[id] {
+		best := 0.0
+		bestPred := ""
+		for _, p := range blocksPreds[id] { // sorted by seq → deterministic ties
 			if state[p] == 1 {
 				hasCycle = true // back-edge: ignore it
 				continue
 			}
-			if l := visit(p) + 1; l > best {
-				best = l
+			if v := visit(p); v > best {
+				best = v
+				bestPred = p
 			}
 		}
 		state[id] = 2
-		bdepth[id] = best
-		return best
+		bweight[id] = best + weight(id)
+		bpred[id] = bestPred
+		return bweight[id]
 	}
 	for _, id := range blockIDs {
 		visit(id)
 	}
-	critical := criticalPath(blockIDs, blocksPreds, bdepth)
+
+	// Reconstruct the critical chain from the deepest endpoint back along bpred.
+	end := ""
+	bestEnd := -1.0
+	for _, id := range blockIDs { // stable order → deterministic endpoint on ties
+		if bweight[id] > bestEnd {
+			bestEnd = bweight[id]
+			end = id
+		}
+	}
+	critical := map[string]bool{}
+	criticalHours := 0.0
+	for cur := end; cur != ""; cur = bpred[cur] {
+		critical[cur] = true
+		criticalHours += effortByID[cur]
+	}
 
 	// Layout layer = longest path over BOTH contains and blocks edges, so a node
 	// sits to the right of its parent AND of anything that blocks it. Hierarchy
@@ -195,45 +242,7 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 		nodes = append(nodes, GraphNode{ID: id, Layer: d, Critical: critical[id]})
 	}
 
-	return &Graph{Nodes: nodes, Edges: edges, MaxLayer: maxLayer, HasCycle: hasCycle}, nil
-}
-
-// criticalPath walks back from the deepest node, always taking the
-// strictly-lower-depth predecessor with the highest depth (the longest chain).
-func criticalPath(nodeIDs []string, preds map[string][]string, depthByID map[string]int) map[string]bool {
-	crit := map[string]bool{}
-	end := ""
-	deepest := -1
-	for _, id := range nodeIDs { // nodeIDs is already in stable order
-		if depthByID[id] > deepest {
-			deepest = depthByID[id]
-			end = id
-		}
-	}
-	if end == "" {
-		return crit
-	}
-	crit[end] = true
-	cur := end
-	for {
-		best := ""
-		bestDepth := -1
-		for _, p := range preds[cur] {
-			if crit[p] || depthByID[p] >= depthByID[cur] {
-				continue // guard against cycles / non-decreasing steps
-			}
-			if depthByID[p] > bestDepth {
-				bestDepth = depthByID[p]
-				best = p
-			}
-		}
-		if best == "" {
-			break
-		}
-		crit[best] = true
-		cur = best
-	}
-	return crit
+	return &Graph{Nodes: nodes, Edges: edges, MaxLayer: maxLayer, HasCycle: hasCycle, CriticalHours: criticalHours}, nil
 }
 
 func projectBlockEdges(conn *sql.DB, projectID string) ([]GraphEdge, error) {

@@ -52,7 +52,7 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 - `track task create/move/done/cancel/list/get/next/delete/link` (`done --note`, `cancel --reason`)
 - `track session start/end/log`
 - `track sprint create/add/remove/start/complete/list/tasks`
-- `track report status/velocity/health/snapshot`
+- `track status/velocity/health/snapshot` (top-level commands — there is no `track report` parent)
 - `track blocker create/list/resolve`
 - `track ado config/pull/status`
 
