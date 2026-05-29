@@ -124,10 +124,14 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_session_current` | Get current active session |
 | `track_decision_create` | Record a decision |
 | `track_decision_resolve` | Resolve a pending decision |
+| `track_decision_list` | List decisions (filter by project/status/expiring) |
 | `track_learn` | Capture a learning |
 | `track_learn_search` | Search learnings |
+| `track_learn_list` | List learnings (filter by project/category) |
 | `track_status` | Project status summary |
 | `track_blocker_list` | List active blockers |
+| `track_blocker_create` | Create a blocker |
+| `track_blocker_resolve` | Resolve a blocker by id |
 | `track_sprint_create` | Create a sprint |
 | `track_sprint_list` | List a project's sprints |
 | `track_sprint_start` / `track_sprint_complete` | Set sprint status active/completed |
