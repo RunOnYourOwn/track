@@ -144,7 +144,7 @@ func pullTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 	// Second pass: resolve parent links
 	if !dryRun {
 		adoIDToLocalID := buildAdoIndex(conn, project)
-		resolveParents(conn, workItems, adoIDToLocalID)
+		stats.Failed += resolveParents(conn, workItems, adoIDToLocalID)
 	}
 
 	return nil
@@ -331,7 +331,10 @@ func buildAdoIndex(conn *sql.DB, project *db.ProjectInfo) map[int]string {
 	return db.BuildAdoIDIndex(conn, project.ID)
 }
 
-func resolveParents(conn *sql.DB, workItems []WorkItem, adoIDToLocalID map[int]string) {
+// resolveParents links children to parents and returns the number of links that
+// failed, so the caller can fold them into stats.Failed rather than only logging.
+func resolveParents(conn *sql.DB, workItems []WorkItem, adoIDToLocalID map[int]string) int {
+	failed := 0
 	for _, wi := range workItems {
 		parentAdoID := ExtractParentID(wi.Relations)
 		if parentAdoID == 0 {
@@ -347,6 +350,8 @@ func resolveParents(conn *sql.DB, workItems []WorkItem, adoIDToLocalID map[int]s
 		}
 		if err := db.SetParentID(conn, localTaskID, localParentID); err != nil {
 			fmt.Printf("  warning: set parent for %s → %s: %v\n", localTaskID, localParentID, err)
+			failed++
 		}
 	}
+	return failed
 }
