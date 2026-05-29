@@ -214,6 +214,8 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleProjectList(conn, args)
 	case "track_project_delete":
 		return handleProjectDelete(conn, args)
+	case "track_project_update":
+		return handleProjectUpdate(conn, args)
 	case "track_task_list":
 		return handleTaskList(conn, args)
 	case "track_task_create":
@@ -407,6 +409,55 @@ func handleProjectList(conn *sql.DB, _ map[string]any) (*ToolCallResult, error) 
 // a deliberate echo that guards against an accidental call. The agent must still
 // get the user's go-ahead before invoking this; the check just prevents fat-finger
 // deletions, it is not user consent.
+// handleProjectUpdate edits project settings (only the args provided change),
+// mirroring the CLI `project edit` and the HTTP PATCH so MCP agents have parity.
+func handleProjectUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "prefix")
+	if prefix == "" {
+		return nil, fmt.Errorf("prefix is required")
+	}
+	p, err := db.GetProjectByPrefix(conn, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("project %q not found", prefix)
+	}
+	if v := strArg(args, "name"); v != "" {
+		if err := db.UpdateProjectField(conn, p.ID, "name", v); err != nil {
+			return nil, err
+		}
+	}
+	if v := strArg(args, "phase"); v != "" {
+		if err := db.UpdateProjectField(conn, p.ID, "phase", v); err != nil {
+			return nil, err
+		}
+	}
+	if v := strArg(args, "phase_type"); v != "" {
+		if !db.ValidPhaseTypes[v] {
+			return nil, fmt.Errorf("invalid phase_type %q (expected: discovery, design, build, stabilize, maintain)", v)
+		}
+		if err := db.UpdateProjectField(conn, p.ID, "phase_type", v); err != nil {
+			return nil, err
+		}
+	}
+	if v := strArg(args, "task_sort"); v != "" {
+		if !db.ValidTaskSorts[v] {
+			return nil, fmt.Errorf("invalid task_sort %q (expected: priority, manual, created, due)", v)
+		}
+		if err := db.UpdateProjectField(conn, p.ID, "task_sort", v); err != nil {
+			return nil, err
+		}
+	}
+	if wip := floatArg(args, "wip_limit"); wip >= 1 {
+		if err := db.UpdateProjectField(conn, p.ID, "wip_limit", fmt.Sprintf("%d", int(wip))); err != nil {
+			return nil, err
+		}
+	}
+	updated, err := db.GetProjectByID(conn, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(updated), nil
+}
+
 func handleProjectDelete(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
 	prefix := strArg(args, "prefix")
 	if prefix == "" {
@@ -1104,6 +1155,22 @@ func allTools() []Tool {
 			Name:        "track_project_list",
 			Description: "List all projects",
 			InputSchema: InputSchema{Type: "object"},
+		},
+		{
+			Name:        "track_project_update",
+			Description: "Edit project settings; only the fields you pass change.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"prefix":     {Type: "string", Description: "Project prefix (required)"},
+					"name":       {Type: "string", Description: "Project name"},
+					"phase":      {Type: "string", Description: "Current phase label (e.g. MVP1)"},
+					"phase_type": {Type: "string", Description: "discovery | design | build | stabilize | maintain"},
+					"wip_limit":  {Type: "number", Description: "Max in-progress tasks (>= 1)"},
+					"task_sort":  {Type: "string", Description: "priority | manual | created | due"},
+				},
+				Required: []string{"prefix"},
+			},
 		},
 		{
 			Name:        "track_project_delete",

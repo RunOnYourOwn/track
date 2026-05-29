@@ -47,6 +47,7 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 ## Key Commands
 - `track serve` — start HTTP server (default :3011)
 - `track project create --prefix PREFIX --name "Name"`
+- `track project edit PREFIX` — edit settings (`--name/--phase/--phase-type/--wip-limit/--task-sort`); only passed flags change
 - `track project delete PREFIX` — cascade-delete a project + all its data (prompts to retype the prefix; `--yes` skips)
 - `track task create/move/done/cancel/list/get/next/delete/link` (`done --note`, `cancel --reason`)
 - `track session start/end/log`
@@ -105,6 +106,7 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | Tool | Purpose |
 |------|---------|
 | `track_project_list` | List all projects |
+| `track_project_update` | Edit project settings (name/phase/phase_type/wip_limit/task_sort) |
 | `track_project_delete` | Delete a project + all its data (cascade; requires `confirm` = prefix) |
 | `track_task_list` | List tasks (filter by project/status/priority) |
 | `track_task_create` | Create a task with title, type, priority, estimate |
