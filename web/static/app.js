@@ -153,6 +153,27 @@ const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
 function isWaiting(s) { return typeof s === 'string' && s.indexOf('waiting') === 0; }
 
+// The server (db.OrderedStatuses / OrderedPriorities) is the source of truth for
+// the status + priority vocabulary; fetch it once at boot and reconcile the
+// fallback literals above IN PLACE. The literals stay so first paint and an
+// offline /api/meta still work, but adding/renaming a status server-side now
+// reaches the UI without a second edit here.
+async function loadMeta() {
+  try {
+    const m = await api.get('/meta');
+    if (Array.isArray(m.statuses) && m.statuses.length) {
+      STATUSES.length = 0;
+      _statusSet.clear();
+      m.statuses.forEach(s => { STATUSES.push(s); _statusSet.add(s); });
+    }
+    if (Array.isArray(m.priorities) && m.priorities.length) {
+      Object.keys(PRIORITY_ORDER).forEach(k => delete PRIORITY_ORDER[k]);
+      _validPriorities.clear();
+      m.priorities.forEach((p, i) => { PRIORITY_ORDER[p] = i; _validPriorities.add(p); });
+    }
+  } catch (_) { /* keep the literal fallback */ }
+}
+
 // Sort already-fetched tasks for display: by priority rank, then seq.
 function byPriority(a, b) {
   const d = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
@@ -606,8 +627,10 @@ router.register('/insights',  () => renderInsights());
 // (not via an inline <script>) so the Content-Security-Policy can forbid inline
 // scripts. DOMContentLoaded fires after all synchronous <script> tags execute,
 // so every render* global is defined by the time we dispatch the first route.
+// Load the server vocabulary before the first render (fall back to the literals
+// if it fails), then start routing.
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => router.start());
+  document.addEventListener('DOMContentLoaded', () => loadMeta().finally(() => router.start()));
 } else {
-  router.start();
+  loadMeta().finally(() => router.start());
 }

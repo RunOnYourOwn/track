@@ -362,18 +362,32 @@ func rollupParentDerived(tasks []models.Task) {
 	}
 }
 
-var validStatuses = map[string]bool{
-	"todo": true, "in_progress": true, "blocked": true, "done": true, "cancelled": true,
-	"waiting_review": true, "waiting_external": true, "waiting_dependency": true,
+// OrderedStatuses is the canonical task-status vocabulary in display order — the
+// single source of truth shipped to the web UI via GET /api/meta, so the UI no
+// longer hard-codes its own copy. validStatuses (membership) derives from it.
+var OrderedStatuses = []string{
+	"todo", "in_progress", "blocked", "done", "cancelled",
+	"waiting_review", "waiting_external", "waiting_dependency",
+}
+
+// OrderedPriorities is the canonical priority vocabulary, highest-urgency first;
+// the slice index is the sort rank (mirrored by priorityRank in SQL).
+var OrderedPriorities = []string{"urgent", "high", "medium", "low"}
+
+var validStatuses = sliceToSet(OrderedStatuses)
+var validPriorities = sliceToSet(OrderedPriorities)
+
+func sliceToSet(ss []string) map[string]bool {
+	m := make(map[string]bool, len(ss))
+	for _, s := range ss {
+		m[s] = true
+	}
+	return m
 }
 
 // terminalStatuses are the "closed" states — a task in one of these is neither
 // open/active work nor counted as completed throughput (cancelled) vs completed (done).
 func isTerminalStatus(s string) bool { return s == "done" || s == "cancelled" }
-
-var validPriorities = map[string]bool{
-	"urgent": true, "high": true, "medium": true, "low": true,
-}
 
 var validTypes = map[string]bool{
 	"task": true, "feature": true, "epic": true, "bug": true, "debt": true,

@@ -35,6 +35,28 @@ func doJSON(t *testing.T, method, url, body string) *http.Response {
 	return resp
 }
 
+func TestMetaEndpoint(t *testing.T) {
+	srv, _ := newTestServer(t)
+	resp := doJSON(t, "GET", srv.URL+"/api/meta", "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("meta: got %d", resp.StatusCode)
+	}
+	var m struct {
+		Statuses   []string `json:"statuses"`
+		Priorities []string `json:"priorities"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	resp.Body.Close()
+	if len(m.Statuses) == 0 || m.Statuses[0] != "todo" {
+		t.Fatalf("statuses wrong: %v", m.Statuses)
+	}
+	if len(m.Priorities) == 0 || m.Priorities[0] != "urgent" {
+		t.Fatalf("priorities wrong: %v", m.Priorities)
+	}
+}
+
 func TestProjectsEndpoints(t *testing.T) {
 	srv, _ := newTestServer(t)
 
