@@ -28,7 +28,7 @@ const api = {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
       throw new Error(err.error || resp.statusText);
     }
-    return resp.json();
+    return resp.status === 204 ? null : resp.json();
   },
 
   async patch(path, body) {
@@ -41,7 +41,7 @@ const api = {
       const err = await resp.json().catch(() => ({ error: resp.statusText }));
       throw new Error(err.error || resp.statusText);
     }
-    return resp.json();
+    return resp.status === 204 ? null : resp.json();
   },
 
   async del(path) {

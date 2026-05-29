@@ -121,6 +121,60 @@ func TestCreateProjectPrefixValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+// Knowledge can be created and resolved over HTTP (was CLI/MCP-only).
+func TestKnowledgeCreateAndResolveHTTP(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"KB","name":"K"}`).Body.Close()
+
+	// missing title → 400
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/KB/decisions", `{"context":"x"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("decision without title: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// create decision → 201, status open
+	resp = doJSON(t, "POST", srv.URL+"/api/projects/KB/decisions",
+		`{"title":"Use SQLite","context":"single user","options":["sqlite","postgres"]}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create decision: got %d, want 201", resp.StatusCode)
+	}
+	var dec struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&dec)
+	resp.Body.Close()
+	if dec.Status != "open" {
+		t.Fatalf("new decision should be open, got %q", dec.Status)
+	}
+
+	// resolve it → 204, then it reads as decided
+	resp = doJSON(t, "POST", srv.URL+"/api/decisions/"+dec.ID+"/resolve", `{"decision":"sqlite","rationale":"simpler"}`)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("resolve decision: got %d, want 204", resp.StatusCode)
+	}
+	resp.Body.Close()
+	resp = doJSON(t, "GET", srv.URL+"/api/projects/KB/decisions", "")
+	var decs []struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	json.NewDecoder(resp.Body).Decode(&decs)
+	resp.Body.Close()
+	if len(decs) != 1 || decs[0].Status != "decided" {
+		t.Fatalf("decision should be decided after resolve, got %+v", decs)
+	}
+
+	// create learning → 201
+	resp = doJSON(t, "POST", srv.URL+"/api/projects/KB/learnings",
+		`{"title":"WAL needed","body":"enable WAL for concurrent reads","category":"gotcha","applies_to":["KB"]}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create learning: got %d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 // M7: updateSprint for a nonexistent id returns 404, not 200 null.
 func TestUpdateSprintNotFound(t *testing.T) {
 	srv, _ := newTestServer(t)
