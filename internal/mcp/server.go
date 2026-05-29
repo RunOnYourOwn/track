@@ -212,6 +212,8 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 	switch call.Name {
 	case "track_project_list":
 		return handleProjectList(conn, args)
+	case "track_project_create":
+		return handleProjectCreate(conn, args)
 	case "track_project_delete":
 		return handleProjectDelete(conn, args)
 	case "track_project_update":
@@ -232,6 +234,8 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleTaskNext(conn, args)
 	case "track_task_link":
 		return handleTaskLink(conn, args)
+	case "track_task_unlink":
+		return handleTaskUnlink(conn, args)
 	case "track_task_delete":
 		return handleTaskDelete(conn, args)
 	case "track_task_update":
@@ -414,6 +418,30 @@ func handleProjectList(conn *sql.DB, _ map[string]any) (*ToolCallResult, error) 
 		return nil, err
 	}
 	return jsonResult(projects), nil
+}
+
+// handleProjectCreate mirrors the CLI `project create`: prefix + name are
+// required; phase/phase_type are optional; wip_limit defaults inside
+// db.CreateProject (0 → 3) just as the CLI's default flag value does.
+func handleProjectCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "prefix")
+	if prefix == "" {
+		return nil, fmt.Errorf("prefix is required")
+	}
+	name := strArg(args, "name")
+	if name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+	phaseType := strArg(args, "phase_type")
+	if phaseType != "" && !db.ValidPhaseTypes[phaseType] {
+		return nil, fmt.Errorf("invalid phase_type %q (expected: discovery, design, build, stabilize, maintain)", phaseType)
+	}
+	wipLimit := int(floatArg(args, "wip_limit"))
+	p, err := db.CreateProject(conn, prefix, name, strArg(args, "phase"), phaseType, "", "", wipLimit)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(p), nil
 }
 
 // handleProjectDelete cascades a full project deletion. Because an MCP tool can't
@@ -683,6 +711,28 @@ func handleTaskLink(conn *sql.DB, args map[string]any) (*ToolCallResult, error) 
 		return nil, err
 	}
 	return textResult(fmt.Sprintf("linked: %s blocks %s", fromStr, toStr)), nil
+}
+
+func handleTaskUnlink(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	fromStr := strArg(args, "from_id")
+	toStr := strArg(args, "to_id")
+	if fromStr == "" || toStr == "" {
+		return nil, fmt.Errorf("from_id and to_id are required")
+	}
+
+	fromID, err := resolveTaskID(conn, fromStr)
+	if err != nil {
+		return nil, fmt.Errorf("from_id: %w", err)
+	}
+	toID, err := resolveTaskID(conn, toStr)
+	if err != nil {
+		return nil, fmt.Errorf("to_id: %w", err)
+	}
+
+	if err := db.DeleteDependency(conn, fromID, toID); err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("unlinked: %s no longer blocks %s", fromStr, toStr)), nil
 }
 
 func handleTaskDelete(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -1323,6 +1373,21 @@ func allTools() []Tool {
 			InputSchema: InputSchema{Type: "object"},
 		},
 		{
+			Name:        "track_project_create",
+			Description: "Create a new project. prefix + name are required; wip_limit defaults to 3.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"prefix":     {Type: "string", Description: "Project prefix, e.g. PROJ (required)"},
+					"name":       {Type: "string", Description: "Project name (required)"},
+					"phase":      {Type: "string", Description: "Current phase label (e.g. MVP1)"},
+					"phase_type": {Type: "string", Description: "discovery | design | build | stabilize | maintain (default: build)"},
+					"wip_limit":  {Type: "number", Description: "Max in-progress tasks (default: 3)"},
+				},
+				Required: []string{"prefix", "name"},
+			},
+		},
+		{
 			Name:        "track_project_update",
 			Description: "Edit project settings; only the fields you pass change.",
 			InputSchema: InputSchema{
@@ -1452,6 +1517,18 @@ func allTools() []Tool {
 					"to_id":   {Type: "string", Description: "Task that is blocked (PREFIX-NNN or ULID)"},
 					"type":    {Type: "string", Description: "blocks | soft | informational"},
 					"reason":  {Type: "string", Description: "Reason for the dependency"},
+				},
+				Required: []string{"from_id", "to_id"},
+			},
+		},
+		{
+			Name:        "track_task_unlink",
+			Description: "Remove a dependency between two tasks (the from_id blocks to_id link created by track_task_link)",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"from_id": {Type: "string", Description: "Task that blocks (PREFIX-NNN or ULID)"},
+					"to_id":   {Type: "string", Description: "Task that is blocked (PREFIX-NNN or ULID)"},
 				},
 				Required: []string{"from_id", "to_id"},
 			},

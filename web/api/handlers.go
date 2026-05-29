@@ -535,7 +535,7 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 			}
 		default:
 			if err := db.MoveTask(h.conn, id, req.Status); err != nil {
-				writeServerError(w, err)
+				writeFieldError(w, err)
 				return
 			}
 		}
@@ -945,11 +945,11 @@ func (h *handler) resolveDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := db.ResolveDecision(h.conn, r.PathValue("id"), req.Decision, req.Rationale); err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "decision not found")
 			return
 		}
-		if strings.Contains(err.Error(), "already decided") {
+		if errors.Is(err, db.ErrDecisionAlreadyDecided) {
 			writeError(w, http.StatusConflict, "decision is already decided")
 			return
 		}
@@ -1302,6 +1302,9 @@ func (h *handler) updateSprint(w http.ResponseWriter, r *http.Request) {
 func (h *handler) addSprintTask(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.PathValue("id")
 	taskID := r.PathValue("taskId")
+	if !h.sprintAndTaskExist(w, sprintID, taskID) {
+		return
+	}
 	if err := db.AddTaskToSprint(h.conn, sprintID, taskID); err != nil {
 		writeServerError(w, err)
 		return
@@ -1312,11 +1315,38 @@ func (h *handler) addSprintTask(w http.ResponseWriter, r *http.Request) {
 func (h *handler) removeSprintTask(w http.ResponseWriter, r *http.Request) {
 	sprintID := r.PathValue("id")
 	taskID := r.PathValue("taskId")
+	if !h.sprintAndTaskExist(w, sprintID, taskID) {
+		return
+	}
 	if err := db.RemoveTaskFromSprint(h.conn, sprintID, taskID); err != nil {
 		writeServerError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
+}
+
+// sprintAndTaskExist verifies both ids resolve to real rows, writing a 404 (or a
+// 500 on an unexpected error) and returning false if either is missing. The DB
+// add/remove use INSERT OR IGNORE / DELETE which silently succeed on bad ids, so
+// the existence check has to happen here for the API to return a meaningful code.
+func (h *handler) sprintAndTaskExist(w http.ResponseWriter, sprintID, taskID string) bool {
+	if _, err := db.GetSprint(h.conn, sprintID); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "sprint not found")
+			return false
+		}
+		writeServerError(w, err)
+		return false
+	}
+	if _, err := db.GetTask(h.conn, taskID); err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "task not found")
+			return false
+		}
+		writeServerError(w, err)
+		return false
+	}
+	return true
 }
 
 func (h *handler) listSprintTasks(w http.ResponseWriter, r *http.Request) {

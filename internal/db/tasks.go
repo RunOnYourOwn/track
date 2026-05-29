@@ -370,7 +370,7 @@ var validSourceTypes = map[string]bool{
 
 func MoveTask(db *sql.DB, id, status string) error {
 	if !validStatuses[status] {
-		return fmt.Errorf("invalid status %q", status)
+		return validationErrf("invalid status %q", status)
 	}
 	if err := moveTaskNoAutoClose(db, id, status); err != nil {
 		return err
