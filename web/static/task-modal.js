@@ -145,6 +145,10 @@ var openTaskModal = (function () {
             ${parentOptions}
           </select>
         </div>
+        <div class="tt-modal-field">
+          <label class="tt-modal-label">Completion note <span style="color:var(--muted);font-weight:400;">(what shipped, or why cancelled)</span></label>
+          <textarea class="tt-modal-textarea" id="detail-completion-note" rows="2">${escHtml(t.completion_note || '')}</textarea>
+        </div>
         <div class="stat-row mt-8"><span class="stat-label">Source</span><span class="stat-value">${escHtml(t.source_type || '—')}</span></div>
         <div class="stat-row"><span class="stat-label">Created</span><span class="stat-value">${fmtDate(t.created_at)}</span></div>
         <div class="stat-row"><span class="stat-label">Updated</span><span class="stat-value">${fmtDate(t.updated_at)}</span></div>
@@ -212,6 +216,7 @@ var openTaskModal = (function () {
     const due = _val('detail-due') || '';
     const tags = _val('detail-tags');
     const parentId = _val('detail-parent') || '';
+    const completionNote = _val('detail-completion-note') || '';
     // Treat the default "[]" tags as empty so saving an untouched task doesn't churn it.
     const origTags = t.tags === '[]' ? '' : (t.tags || '');
 
@@ -227,6 +232,7 @@ var openTaskModal = (function () {
     if (due !== (t.due_date || '')) payload.due_date = due;
     if (tags !== origTags) payload.tags = tags;
     if (parentId !== (t.parent_id || '')) payload.parent_id = parentId;
+    if (completionNote !== (t.completion_note || '')) payload.completion_note = completionNote;
 
     if (Object.keys(payload).length === 0) { _close(); return; }
 

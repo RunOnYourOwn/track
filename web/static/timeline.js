@@ -60,7 +60,7 @@ async function renderTimeline(prefix) {
 }
 
 function _renderTimeline() {
-  const activeTasks = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done');
+  const activeTasks = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
 
   const _sortByPriority = byPriority; // shared comparator from app.js
 
@@ -82,7 +82,7 @@ function _renderTimeline() {
   function _descendantTaskStats(id) {
     let total = 0, done = 0;
     (allChildrenByParent[id] || []).forEach(c => {
-      if ((c.type || 'task') === 'task') { total++; if (c.status === 'done') done++; }
+      if ((c.type || 'task') === 'task' && c.status !== 'cancelled') { total++; if (c.status === 'done') done++; }
       const sub = _descendantTaskStats(c.id);
       total += sub.total; done += sub.done;
     });

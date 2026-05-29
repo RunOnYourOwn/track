@@ -147,7 +147,7 @@ const _validPriorities = new Set(['urgent', 'high', 'medium', 'low']);
 // Shared domain helpers — single source of truth across all views (app.js loads
 // first, so these globals are available to every view module).
 // Canonical task statuses; mirrors the server's validStatuses in internal/db/tasks.go.
-const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'waiting_review', 'waiting_external', 'waiting_dependency'];
+const STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'cancelled', 'waiting_review', 'waiting_external', 'waiting_dependency'];
 const _statusSet = new Set(STATUSES);
 const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
 
