@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,6 +35,32 @@ func logFile() string {
 	return filepath.Join(home, ".track", "track.log")
 }
 
+// removeOwnPIDFile deletes the PID file only if it still names this process. A
+// fast `stop && serve` can have a successor write its own PID before this
+// (draining) server exits; without the ownership check the exiting server would
+// delete the successor's PID file and orphan it from stop/server-status.
+func removeOwnPIDFile(path string) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && pid == os.Getpid() {
+		_ = os.Remove(path)
+	}
+}
+
+// waitForExit polls for process exit (signal 0) up to ~11s — just past the 10s
+// graceful-shutdown grace — returning true once it's gone.
+func waitForExit(proc *os.Process) bool {
+	for i := 0; i < 110; i++ {
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			return true
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return false
+}
+
 func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(stopCmd)
@@ -58,12 +85,7 @@ var serveCmd = &cobra.Command{
 				if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
 					if proc, err := os.FindProcess(pid); err == nil {
 						_ = proc.Signal(syscall.SIGTERM)
-						for i := 0; i < 50; i++ {
-							if sigErr := proc.Signal(syscall.Signal(0)); sigErr != nil {
-								break // old process has exited
-							}
-							time.Sleep(100 * time.Millisecond)
-						}
+						waitForExit(proc) // wait past the graceful-shutdown grace before rebinding
 					}
 				}
 				_ = os.Remove(pidFile())
@@ -94,9 +116,6 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("failed to open database: %w", err)
 		}
 
-		// Write PID file
-		_ = os.WriteFile(pidFile(), []byte(strconv.Itoa(os.Getpid())), 0644)
-
 		mux := http.NewServeMux()
 		api.RegisterRoutes(mux, conn)
 
@@ -119,6 +138,17 @@ var serveCmd = &cobra.Command{
 
 		srv := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: securityMiddleware(mux)}
 
+		// Bind the port BEFORE writing the PID file: a failed bind (e.g. the port
+		// is still held by a draining old server) must not leave a stale PID file
+		// pointing at a process that immediately exits.
+		ln, err := net.Listen("tcp", srv.Addr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", srv.Addr, err)
+		}
+		pf := pidFile()
+		_ = os.WriteFile(pf, []byte(strconv.Itoa(os.Getpid())), 0644)
+		defer removeOwnPIDFile(pf)
+
 		// Graceful shutdown: drain in-flight requests on SIGTERM/SIGINT, then let
 		// PersistentPostRun close the DB (which checkpoints WAL).
 		sigCh := make(chan os.Signal, 1)
@@ -130,12 +160,10 @@ var serveCmd = &cobra.Command{
 			_ = srv.Shutdown(ctx)
 		}()
 
-		err = srv.ListenAndServe()
-		_ = os.Remove(pidFile())
-		if err == http.ErrServerClosed {
-			return nil
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+			return err
 		}
-		return err
+		return nil
 	},
 }
 
@@ -262,7 +290,18 @@ var stopCmd = &cobra.Command{
 			return fmt.Errorf("failed to stop process %d: %w", pid, err)
 		}
 
-		_ = os.Remove(pidFile())
+		// Wait for the process to actually exit before reporting success, so a
+		// scripted `track stop && track serve` doesn't race the old server's drain.
+		if !waitForExit(process) {
+			return fmt.Errorf("process %d did not exit within the shutdown grace period", pid)
+		}
+		// The exiting server removes its own PID file; clean up only if it still
+		// names the process we just stopped (don't clobber a successor's PID file).
+		if data, err := os.ReadFile(pidFile()); err == nil {
+			if p, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && p == pid {
+				_ = os.Remove(pidFile())
+			}
+		}
 		fmt.Printf("Stopped track server (PID %d)\n", pid)
 		return nil
 	},
