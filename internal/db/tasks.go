@@ -517,6 +517,10 @@ func SyncAgentContext(d *sql.DB, id, context string) error {
 	return err
 }
 
+// DeleteTask removes a task and detaches/cleans its references. Returns
+// sql.ErrNoRows if no task with that id exists (so callers can map a 404). Every
+// cleanup statement's error is surfaced — a failed cleanup rolls the whole
+// deletion back rather than committing a partial, orphaning state.
 func DeleteTask(d *sql.DB, id string) error {
 	tx, err := d.Begin()
 	if err != nil {
@@ -524,20 +528,35 @@ func DeleteTask(d *sql.DB, id string) error {
 	}
 	defer tx.Rollback()
 
-	tx.Exec(`DELETE FROM task_status_history WHERE task_id = ?`, id)
-	tx.Exec(`DELETE FROM dependencies WHERE from_task_id = ? OR to_task_id = ?`, id, id)
-	tx.Exec(`DELETE FROM time_entries WHERE task_id = ?`, id)
-	tx.Exec(`DELETE FROM task_commits WHERE task_id = ?`, id)
-	tx.Exec(`DELETE FROM sprint_tasks WHERE task_id = ?`, id)
-	// cross_project_deps has non-nullable FKs to tasks(id); without this a task
-	// referenced by a cross-project dep can never be deleted (FK 787).
-	tx.Exec(`DELETE FROM cross_project_deps WHERE source_task_id = ? OR target_task_id = ?`, id, id)
-	tx.Exec(`UPDATE blockers SET task_id = NULL WHERE task_id = ?`, id)
-	tx.Exec(`UPDATE decisions SET task_id = NULL WHERE task_id = ?`, id)
-	tx.Exec(`UPDATE learnings SET task_id = NULL WHERE task_id = ?`, id)
-	tx.Exec(`UPDATE tasks SET parent_id = NULL WHERE parent_id = ?`, id)
-	if _, err := tx.Exec(`DELETE FROM tasks WHERE id = ?`, id); err != nil {
+	cleanup := []struct {
+		query string
+		args  []any
+	}{
+		{`DELETE FROM task_status_history WHERE task_id = ?`, []any{id}},
+		{`DELETE FROM dependencies WHERE from_task_id = ? OR to_task_id = ?`, []any{id, id}},
+		{`DELETE FROM time_entries WHERE task_id = ?`, []any{id}},
+		{`DELETE FROM task_commits WHERE task_id = ?`, []any{id}},
+		{`DELETE FROM sprint_tasks WHERE task_id = ?`, []any{id}},
+		// cross_project_deps has non-nullable FKs to tasks(id); without this a task
+		// referenced by a cross-project dep can never be deleted (FK 787).
+		{`DELETE FROM cross_project_deps WHERE source_task_id = ? OR target_task_id = ?`, []any{id, id}},
+		{`UPDATE blockers SET task_id = NULL WHERE task_id = ?`, []any{id}},
+		{`UPDATE decisions SET task_id = NULL WHERE task_id = ?`, []any{id}},
+		{`UPDATE learnings SET task_id = NULL WHERE task_id = ?`, []any{id}},
+		{`UPDATE tasks SET parent_id = NULL WHERE parent_id = ?`, []any{id}},
+	}
+	for _, s := range cleanup {
+		if _, err := tx.Exec(s.query, s.args...); err != nil {
+			return fmt.Errorf("delete task cleanup: %w", err)
+		}
+	}
+
+	res, err := tx.Exec(`DELETE FROM tasks WHERE id = ?`, id)
+	if err != nil {
 		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
 	}
 	return tx.Commit()
 }

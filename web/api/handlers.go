@@ -626,6 +626,10 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 func (h *handler) deleteTask(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := db.DeleteTask(h.conn, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "task not found")
+			return
+		}
 		writeServerError(w, err)
 		return
 	}
