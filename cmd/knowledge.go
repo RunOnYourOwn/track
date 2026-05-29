@@ -384,7 +384,7 @@ func resolveDecisionID(raw string) (string, error) {
 		return "", err
 	}
 	var id string
-	err = conn.QueryRow(`SELECT id FROM decisions WHERE id LIKE ? LIMIT 1`, raw+"%").Scan(&id)
+	err = conn.QueryRow(`SELECT id FROM decisions WHERE id LIKE ? ESCAPE '\' LIMIT 1`, escapeLIKE(raw)+"%").Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("decision %q not found", raw)
 	}
@@ -401,7 +401,7 @@ func resolveLearningID(raw string) (string, error) {
 		return "", err
 	}
 	var id string
-	err = conn.QueryRow(`SELECT id FROM learnings WHERE id LIKE ? LIMIT 1`, raw+"%").Scan(&id)
+	err = conn.QueryRow(`SELECT id FROM learnings WHERE id LIKE ? ESCAPE '\' LIMIT 1`, escapeLIKE(raw)+"%").Scan(&id)
 	if err != nil {
 		return "", fmt.Errorf("learning %q not found", raw)
 	}

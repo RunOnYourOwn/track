@@ -111,7 +111,11 @@ func pullTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 	// Pre-load existing ADO tasks for this project (single query instead of N)
 	var existingTasks map[int]*db.TaskRecord
 	if project != nil {
-		existingTasks = db.LoadAdoTaskIndex(conn, project.ID)
+		var idxErr error
+		existingTasks, idxErr = db.LoadAdoTaskIndex(conn, project.ID)
+		if idxErr != nil {
+			return fmt.Errorf("load ado task index: %w", idxErr)
+		}
 	}
 
 	// First pass: upsert all items
@@ -143,7 +147,10 @@ func pullTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 
 	// Second pass: resolve parent links
 	if !dryRun {
-		adoIDToLocalID := buildAdoIndex(conn, project)
+		adoIDToLocalID, idxErr := buildAdoIndex(conn, project)
+		if idxErr != nil {
+			return fmt.Errorf("build ado id index: %w", idxErr)
+		}
 		stats.Failed += resolveParents(conn, workItems, adoIDToLocalID)
 	}
 
@@ -324,9 +331,9 @@ func isLocalDirty(task *db.TaskRecord) bool {
 	return task.UpdatedAt.After(syncedAt.Add(5 * time.Second))
 }
 
-func buildAdoIndex(conn *sql.DB, project *db.ProjectInfo) map[int]string {
+func buildAdoIndex(conn *sql.DB, project *db.ProjectInfo) (map[int]string, error) {
 	if project == nil {
-		return map[int]string{}
+		return map[int]string{}, nil
 	}
 	return db.BuildAdoIDIndex(conn, project.ID)
 }

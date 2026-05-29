@@ -98,7 +98,7 @@ func TestPushTeamEndToEnd(t *testing.T) {
 	}
 
 	// Verify agent_context was updated
-	index := db.LoadAdoTaskIndex(conn, "")
+	index, _ := db.LoadAdoTaskIndex(conn, "")
 	// Re-query directly
 	var ctxStr string
 	conn.QueryRow(`SELECT agent_context FROM tasks WHERE id = 'push-1'`).Scan(&ctxStr)

@@ -21,12 +21,12 @@ type TaskRecord struct {
 }
 
 // LoadAdoTaskIndex loads all ADO-sourced tasks for a project into a map keyed by ADO work item ID.
-func LoadAdoTaskIndex(conn *sql.DB, projectID string) map[int]*TaskRecord {
+func LoadAdoTaskIndex(conn *sql.DB, projectID string) (map[int]*TaskRecord, error) {
 	index := map[int]*TaskRecord{}
 
 	rows, err := conn.Query(`SELECT id, status, title, description, agent_context, updated_at FROM tasks WHERE project_id = ? AND source_type = 'ado'`, projectID)
 	if err != nil {
-		return index
+		return index, err
 	}
 	defer rows.Close()
 
@@ -49,16 +49,19 @@ func LoadAdoTaskIndex(conn *sql.DB, projectID string) map[int]*TaskRecord {
 			index[ctx.AdoID] = &rec
 		}
 	}
-	return index
+	if err := rows.Err(); err != nil {
+		return index, err
+	}
+	return index, nil
 }
 
 // BuildAdoIDIndex builds a map from ADO work item ID to local task ID for a project.
-func BuildAdoIDIndex(conn *sql.DB, projectID string) map[int]string {
+func BuildAdoIDIndex(conn *sql.DB, projectID string) (map[int]string, error) {
 	index := map[int]string{}
 
 	rows, err := conn.Query(`SELECT id, agent_context FROM tasks WHERE project_id = ? AND source_type = 'ado'`, projectID)
 	if err != nil {
-		return index
+		return index, err
 	}
 	defer rows.Close()
 
@@ -77,5 +80,8 @@ func BuildAdoIDIndex(conn *sql.DB, projectID string) map[int]string {
 			index[ctx.AdoID] = id
 		}
 	}
-	return index
+	if err := rows.Err(); err != nil {
+		return index, err
+	}
+	return index, nil
 }

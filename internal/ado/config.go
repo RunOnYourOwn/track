@@ -28,6 +28,11 @@ func ConfigPath() string {
 
 func LoadConfig() (*Config, error) {
 	path := ConfigPath()
+	if info, err := os.Stat(path); err == nil {
+		if info.Mode()&0o077 != 0 {
+			fmt.Fprintf(os.Stderr, "warning: %s is readable by other users; chmod 600 it\n", path)
+		}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

@@ -321,14 +321,7 @@ func extractTaskIDsFromTagRange(projectPrefix, tag string) []string {
 		gitRange = tag
 	}
 
-	var rangeArgs []string
-	if strings.Contains(gitRange, "..") {
-		rangeArgs = []string{"log", "--format=%s", gitRange}
-	} else {
-		rangeArgs = []string{"log", "--format=%s", gitRange}
-	}
-
-	out, err := exec.Command("git", rangeArgs...).Output()
+	out, err := exec.Command("git", "log", "--format=%s", gitRange).Output()
 	if err != nil {
 		return nil
 	}

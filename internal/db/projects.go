@@ -119,8 +119,18 @@ func UpdateProjectField(d *sql.DB, id, field, value string) error {
 	}
 	now := Now()
 	query := fmt.Sprintf(`UPDATE projects SET %s = ?, updated_at = ? WHERE id = ?`, field)
-	_, err := d.Exec(query, value, now, id)
-	return err
+	res, err := d.Exec(query, value, now, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func DeleteProject(db *sql.DB, id string) error {

@@ -98,7 +98,6 @@ func addCORSHeaders(w http.ResponseWriter) {
 func addSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("X-Frame-Options", "DENY")
-	w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com")
 }
 
 // handler holds the shared DB connection for all route handlers.

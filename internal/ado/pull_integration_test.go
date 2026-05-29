@@ -91,7 +91,10 @@ func TestBuildAdoIndex(t *testing.T) {
 	conn := db.OpenTestDB(t)
 
 	// nil project — returns empty map
-	idx := buildAdoIndex(conn, nil)
+	idx, err := buildAdoIndex(conn, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(idx) != 0 {
 		t.Errorf("expected empty for nil project, got %d", len(idx))
 	}
@@ -102,7 +105,10 @@ func TestBuildAdoIndex(t *testing.T) {
 	conn.Exec(`INSERT INTO tasks (id, project_id, seq, title, status, priority, type, source_type, agent_context, created_at, updated_at) VALUES (?, ?, 1, 'T', 'todo', 'medium', 'task', 'ado', ?, ?, ?)`,
 		"t1", p.ID, string(ctx), db.Now(), db.Now())
 
-	idx2 := buildAdoIndex(conn, &db.ProjectInfo{ID: p.ID, Prefix: "IDX"})
+	idx2, err2 := buildAdoIndex(conn, &db.ProjectInfo{ID: p.ID, Prefix: "IDX"})
+	if err2 != nil {
+		t.Fatalf("unexpected error: %v", err2)
+	}
 	if len(idx2) != 1 || idx2[500] != "t1" {
 		t.Errorf("expected {500: t1}, got %v", idx2)
 	}

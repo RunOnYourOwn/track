@@ -373,6 +373,14 @@ func jsonResult(v any) *ToolCallResult {
 // resolveTaskID resolves PREFIX-NNN or raw ULID to an internal task ID.
 func resolveTaskID(conn *sql.DB, displayID string) (string, error) {
 	if len(displayID) == 26 && !strings.Contains(displayID, "-") {
+		var exists int
+		err := conn.QueryRow(`SELECT 1 FROM tasks WHERE id = ?`, displayID).Scan(&exists)
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("task %q not found", displayID)
+		}
+		if err != nil {
+			return "", fmt.Errorf("task lookup: %w", err)
+		}
 		return displayID, nil
 	}
 	parts := strings.SplitN(displayID, "-", 2)

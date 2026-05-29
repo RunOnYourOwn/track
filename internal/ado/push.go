@@ -53,7 +53,10 @@ func pushTeam(conn *sql.DB, client *Client, cfg *Config, sync SyncConfig, stats 
 		return nil
 	}
 
-	index := db.LoadAdoTaskIndex(conn, project.ID)
+	index, err := db.LoadAdoTaskIndex(conn, project.ID)
+	if err != nil {
+		return fmt.Errorf("load ado task index: %w", err)
+	}
 
 	for _, task := range index {
 		if !isLocalDirty(task) {

@@ -211,7 +211,7 @@ func resolveBlockerID(conn *sql.DB, id string) (string, error) {
 
 	// Otherwise treat it as a prefix search in the blockers table.
 	var fullID string
-	err := conn.QueryRow(`SELECT id FROM blockers WHERE id LIKE ? LIMIT 1`, id+"%").Scan(&fullID)
+	err := conn.QueryRow(`SELECT id FROM blockers WHERE id LIKE ? ESCAPE '\' LIMIT 1`, escapeLIKE(id)+"%").Scan(&fullID)
 	if err != nil {
 		return "", fmt.Errorf("blocker %q not found", id)
 	}
