@@ -116,12 +116,12 @@ var openTaskModal = (function () {
             <select class="tt-modal-input" id="detail-estimate-size">${SIZES.map(x => `<option value="${x}" ${(t.estimate_size || '') === x ? 'selected' : ''}>${x || '—'}</option>`).join('')}</select>
           </div>
           <div class="tt-modal-field">
-            <label class="tt-modal-label">Hours</label>
-            <input class="tt-modal-input" id="detail-hours" type="number" step="0.25" value="${t.estimate_hours || ''}">
+            <label class="tt-modal-label">Hours${(t.type === 'epic' || t.type === 'feature') ? ' <span class="text-muted" style="font-weight:400">(derived)</span>' : ''}</label>
+            <input class="tt-modal-input" id="detail-hours" type="number" step="0.25" value="${t.estimate_hours || ''}" ${(t.type === 'epic' || t.type === 'feature') ? 'disabled' : ''}>
           </div>
           <div class="tt-modal-field">
-            <label class="tt-modal-label">Agent min</label>
-            <input class="tt-modal-input" id="detail-agent-min" type="number" min="0" value="${t.estimate_agent_minutes || ''}">
+            <label class="tt-modal-label">Agent min${(t.type === 'epic' || t.type === 'feature') ? ' <span class="text-muted" style="font-weight:400">(derived)</span>' : ''}</label>
+            <input class="tt-modal-input" id="detail-agent-min" type="number" min="0" value="${t.estimate_agent_minutes || ''}" ${(t.type === 'epic' || t.type === 'feature') ? 'disabled' : ''}>
           </div>
         </div>
         <div class="tt-modal-row">

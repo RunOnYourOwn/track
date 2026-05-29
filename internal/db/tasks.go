@@ -271,75 +271,91 @@ func ListTasks(db *sql.DB, opts ListTaskOpts) ([]models.Task, error) {
 		return nil, err
 	}
 
-	// Container (epic/feature) dates are derived from their descendants, not set
-	// directly. Roll them up only for a full, unfiltered project fetch — a filtered
-	// subset would miss descendants and compute wrong spans.
+	// Container (epic/feature) dates and estimates are derived from their
+	// descendants, not set directly. Roll them up only for a full, unfiltered
+	// project fetch — a filtered subset would miss descendants and compute wrong
+	// spans/sums.
 	if opts.ProjectID != "" && len(opts.Status) == 0 && len(opts.Priority) == 0 && opts.Type == "" && opts.ParentID == "" {
-		rollupParentDates(tasks)
+		rollupParentDerived(tasks)
 	}
 	return tasks, nil
 }
 
-// rollupParentDates sets each container task's start/due from its descendants:
-// start = earliest descendant start (its start_date, else its creation date),
-// due = latest descendant due_date (empty if none). Leaf tasks are left as-is.
+// rollupParentDerived sets each container (epic/feature) task's descendant-derived
+// fields, so a parent stays consistent without entering the same value in two
+// places. Leaf tasks are left as-is. Derived fields:
+//   - start_date = earliest descendant start (its start_date, else creation date)
+//   - due_date   = latest descendant due_date (empty if none)
+//   - estimate_hours / estimate_agent_minutes = sum over all descendants
+//
+// estimate_size (T-shirt) is NOT rolled up — it's categorical, not additive.
 // Dates are YYYY-MM-DD strings, which sort lexicographically.
-func rollupParentDates(tasks []models.Task) {
+func rollupParentDerived(tasks []models.Task) {
 	childIdx := map[string][]int{}
 	for i := range tasks {
 		if p := tasks[i].ParentID; p != nil && *p != "" {
 			childIdx[*p] = append(childIdx[*p], i)
 		}
 	}
-	type span struct{ start, due string }
-	memo := map[string]span{}
+	type agg struct {
+		start, due  string
+		estHours    float64
+		estAgentMin int
+	}
+	memo := map[string]agg{}
 	visiting := map[string]bool{}
-	var compute func(i int) span
-	compute = func(i int) span {
+	var compute func(i int) agg
+	compute = func(i int) agg {
 		t := &tasks[i]
-		if s, ok := memo[t.ID]; ok {
-			return s
+		if a, ok := memo[t.ID]; ok {
+			return a
 		}
 		// memo is set after recursing into children, so guard against a parent_id
 		// cycle (re-entering an in-progress node) to avoid unbounded recursion.
 		if visiting[t.ID] {
-			return span{}
+			return agg{}
 		}
 		visiting[t.ID] = true
 		kids := childIdx[t.ID]
-		var sp span
+		var a agg
 		if len(kids) == 0 {
 			if t.StartDate != nil && *t.StartDate != "" {
-				sp.start = *t.StartDate
+				a.start = *t.StartDate
 			} else {
-				sp.start = t.CreatedAt.Format("2006-01-02")
+				a.start = t.CreatedAt.Format("2006-01-02")
 			}
 			if t.DueDate != nil {
-				sp.due = *t.DueDate
+				a.due = *t.DueDate
 			}
+			a.estHours = t.EstimateHours
+			a.estAgentMin = t.EstimateAgentMinutes
 		} else {
 			for _, ci := range kids {
 				cs := compute(ci)
-				if cs.start != "" && (sp.start == "" || cs.start < sp.start) {
-					sp.start = cs.start
+				if cs.start != "" && (a.start == "" || cs.start < a.start) {
+					a.start = cs.start
 				}
-				if cs.due != "" && (sp.due == "" || cs.due > sp.due) {
-					sp.due = cs.due
+				if cs.due != "" && (a.due == "" || cs.due > a.due) {
+					a.due = cs.due
 				}
+				a.estHours += cs.estHours
+				a.estAgentMin += cs.estAgentMin
 			}
-			if sp.start != "" {
-				s := sp.start
+			if a.start != "" {
+				s := a.start
 				t.StartDate = &s
 			}
-			if sp.due != "" {
-				d := sp.due
+			if a.due != "" {
+				d := a.due
 				t.DueDate = &d
 			} else {
 				t.DueDate = nil
 			}
+			t.EstimateHours = a.estHours
+			t.EstimateAgentMinutes = a.estAgentMin
 		}
-		memo[t.ID] = sp
-		return sp
+		memo[t.ID] = a
+		return a
 	}
 	for i := range tasks {
 		compute(i)
@@ -601,10 +617,11 @@ func UpdateTaskField(d *sql.DB, id, field, value string) error {
 		if !validTypes[value] {
 			return fmt.Errorf("invalid type %q", value)
 		}
-	case "start_date", "due_date":
-		// Once a container has descendants its dates are derived (see
-		// rollupParentDates), so setting them directly is rejected. A childless
-		// epic/feature can still hold a date (e.g. an ADO-imported placeholder).
+	case "start_date", "due_date", "estimate_hours", "estimate_agent_minutes":
+		// Once a container has descendants these fields are derived (see
+		// rollupParentDerived), so setting them directly is rejected. A childless
+		// epic/feature can still hold a value (e.g. an ADO-imported placeholder).
+		// estimate_size (T-shirt) is intentionally NOT here — it isn't rolled up.
 		var typ string
 		if err := d.QueryRow(`SELECT type FROM tasks WHERE id = ?`, id).Scan(&typ); err != nil {
 			return err
