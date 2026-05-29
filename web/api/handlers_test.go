@@ -152,6 +152,38 @@ func TestTaskCreateValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+// estimate_hours can be cleared back to 0 (the old >0 guard silently dropped a
+// 0, so an estimate could never be un-set), and a negative value is rejected.
+func TestUpdateTaskClearsEstimate(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"EST","name":"E"}`).Body.Close()
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/EST/tasks", `{"title":"t"}`)
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&task)
+	resp.Body.Close()
+
+	doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"estimate_hours":5}`).Body.Close()
+	doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"estimate_hours":0}`).Body.Close()
+
+	resp = doJSON(t, "GET", srv.URL+"/api/tasks/"+task.ID, "")
+	var got struct {
+		EstimateHours float64 `json:"estimate_hours"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	resp.Body.Close()
+	if got.EstimateHours != 0 {
+		t.Fatalf("estimate_hours should clear to 0, got %v", got.EstimateHours)
+	}
+
+	resp = doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"estimate_hours":-1}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("negative estimate_hours: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 // An invalid project prefix is a client error → 400 (not a 500), while a valid
 // one is created → 201.
 func TestCreateProjectPrefixValidationHTTP(t *testing.T) {

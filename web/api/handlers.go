@@ -470,13 +470,15 @@ type updateTaskRequest struct {
 	StartDate        *string `json:"start_date"`
 	DueDate          *string `json:"due_date"`
 	CompletionNote   *string `json:"completion_note"`
-	Description      string  `json:"description"`
-	Type             string  `json:"type"`
-	EstimateSize     string  `json:"estimate_size"`
-	EstimateHours    float64 `json:"estimate_hours"`
-	EstimateAgentMin int     `json:"estimate_agent_minutes"`
-	SortOrder        int     `json:"sort_order"`
-	Tags             string  `json:"tags"`
+	Description  string `json:"description"`
+	Type         string `json:"type"`
+	EstimateSize string `json:"estimate_size"`
+	// Pointers so an explicit 0 can clear the estimate / reset the order
+	// (omitted = leave unchanged); a plain value can't distinguish the two.
+	EstimateHours    *float64 `json:"estimate_hours"`
+	EstimateAgentMin *int     `json:"estimate_agent_minutes"`
+	SortOrder        *int     `json:"sort_order"`
+	Tags             string   `json:"tags"`
 }
 
 func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
@@ -587,22 +589,30 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.EstimateHours > 0 {
-		if err := db.UpdateTaskField(h.conn, id, "estimate_hours", strconv.FormatFloat(req.EstimateHours, 'f', -1, 64)); err != nil {
+	if req.EstimateHours != nil {
+		if *req.EstimateHours < 0 {
+			writeError(w, http.StatusBadRequest, "estimate_hours must be >= 0")
+			return
+		}
+		if err := db.UpdateTaskField(h.conn, id, "estimate_hours", strconv.FormatFloat(*req.EstimateHours, 'f', -1, 64)); err != nil {
 			writeServerError(w, err)
 			return
 		}
 	}
 
-	if req.EstimateAgentMin > 0 {
-		if err := db.UpdateTaskField(h.conn, id, "estimate_agent_minutes", strconv.Itoa(req.EstimateAgentMin)); err != nil {
+	if req.EstimateAgentMin != nil {
+		if *req.EstimateAgentMin < 0 {
+			writeError(w, http.StatusBadRequest, "estimate_agent_minutes must be >= 0")
+			return
+		}
+		if err := db.UpdateTaskField(h.conn, id, "estimate_agent_minutes", strconv.Itoa(*req.EstimateAgentMin)); err != nil {
 			writeServerError(w, err)
 			return
 		}
 	}
 
-	if req.SortOrder > 0 {
-		if err := db.UpdateTaskField(h.conn, id, "sort_order", strconv.Itoa(req.SortOrder)); err != nil {
+	if req.SortOrder != nil {
+		if err := db.UpdateTaskField(h.conn, id, "sort_order", strconv.Itoa(*req.SortOrder)); err != nil {
 			writeServerError(w, err)
 			return
 		}
