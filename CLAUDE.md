@@ -8,8 +8,8 @@ CLI + web UI for local project management. Single Go binary, SQLite database, no
 - Database: SQLite (stored at ~/.track/track.db)
 - Web UI: vanilla JS + CSS (no build step), served from embedded filesystem
 - Test: `go test ./...`
-- Build: `make build` (outputs to bin/)
-- Cross-compile: `make release` (darwin-arm64, windows-amd64)
+- Build: `make build` → `./track` at the repo root. `make check` = vet + test + build;
+  `make install` copies to `~/bin`. (No `bin/` dir and no `make release` target.)
 
 ### Running the local server (read this before debugging "the UI looks wrong")
 
@@ -46,7 +46,7 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 
 ## Key Commands
 - `track serve` — start HTTP server (default :3011)
-- `track project create PREFIX "Name"`
+- `track project create --prefix PREFIX --name "Name"`
 - `track task create/move/done/list/get/next/delete/link`
 - `track session start/end/log`
 - `track sprint create/add/remove/start/complete/list/tasks`
@@ -56,9 +56,12 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 
 ## Conventions
 - No ORM — raw SQL with `database/sql`
-- Schema changes: add to the `schema` const in `internal/db/db.go` (auto-migrates on serve)
-- New commands: add file in `cmd/`, register in `cmd/root.go`
-- Tests: table-driven, use real SQLite (in-memory `:memory:`)
+- Schema: new tables/columns for a fresh DB go in the `schema` const in
+  `internal/db/db.go`; changes that must apply to EXISTING databases go in the
+  versioned `orderedMigrations` framework in the same file (e.g. `tasks.start_date`).
+  Both run automatically when the DB is opened.
+- New commands: add a file in `cmd/`; it self-registers via `init()` (not `root.go`)
+- Tests: table-driven, use real SQLite via `db.OpenTestDB` (a temp file, not `:memory:`)
 - Web static files: edit in `web/static/`, then rebuild AND restart the server
   to pick up changes (the binary embeds them — see "Running the local server")
 - Skills stay in sync with the code: whenever you change CLI commands, flags, MCP
@@ -91,7 +94,7 @@ Install skills from `skills/` into `~/.claude/skills/`. The typical session:
 
 Skills invoke track via CLI (not MCP). They expect:
 - Track binary on PATH
-- A project created: `track project create PREFIX "Name"`
+- A project created: `track project create --prefix PREFIX --name "Name"`
 - `## Taskboard` section in your project CLAUDE.md with the prefix
 
 ### MCP Integration
@@ -108,6 +111,8 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_task_done` | Mark done with optional actual hours |
 | `track_task_next` | Suggest highest-priority unblocked task |
 | `track_task_link` | Create dependency (from blocks to) |
+| `track_task_update` | Edit task fields (title, priority, start_date, due_date, parent, …) |
+| `track_task_delete` | Delete a task |
 | `track_session_start` | Start a dev session |
 | `track_session_end` | End session with summary |
 | `track_session_log` | Log time against a task |
@@ -118,6 +123,11 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_learn_search` | Search learnings |
 | `track_status` | Project status summary |
 | `track_blocker_list` | List active blockers |
+| `track_sprint_create` | Create a sprint |
+| `track_sprint_list` | List a project's sprints |
+| `track_sprint_start` / `track_sprint_complete` | Set sprint status active/completed |
+| `track_sprint_add` / `track_sprint_remove` | Add/remove a task to/from a sprint |
+| `track_sprint_tasks` | List the tasks in a sprint |
 
 Configure in Claude Code settings:
 
@@ -140,7 +150,7 @@ Capture decisions and learnings as you work — don't wait for session-end:
 track decision create --project PREFIX --title "Use SQLite over Postgres" \
   --context "Single user, no concurrency needs" --decided-by collaborative
 
-track learning create --project PREFIX --title "SQLite WAL mode needed for concurrent reads" \
+track learn create --project PREFIX --title "SQLite WAL mode needed for concurrent reads" \
   --body "Without WAL, the web UI blocks on writes" --category gotcha
 ```
 
