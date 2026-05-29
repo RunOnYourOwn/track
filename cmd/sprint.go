@@ -20,7 +20,7 @@ var sprintCreateCmd = &cobra.Command{
 	Short: "Create a new sprint",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		proj, err := db.GetProjectByPrefix(d, args[0])
 		if err != nil {
 			return fmt.Errorf("project not found: %w", err)
@@ -57,7 +57,7 @@ var sprintListCmd = &cobra.Command{
 	Short: "List sprints for a project",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		proj, err := db.GetProjectByPrefix(d, args[0])
 		if err != nil {
 			return fmt.Errorf("project not found: %w", err)
@@ -102,7 +102,7 @@ var sprintStartCmd = &cobra.Command{
 	Short: "Start a sprint (set status to active)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		sid, err := db.ResolveSprintID(d, args[0])
 		if err != nil {
 			return err
@@ -120,7 +120,7 @@ var sprintCompleteCmd = &cobra.Command{
 	Short: "Complete a sprint",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		sid, err := db.ResolveSprintID(d, args[0])
 		if err != nil {
 			return err
@@ -138,7 +138,7 @@ var sprintAddCmd = &cobra.Command{
 	Short: "Add a task to a sprint",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		sid, err := db.ResolveSprintID(d, args[0])
 		if err != nil {
 			return err
@@ -160,7 +160,7 @@ var sprintRemoveCmd = &cobra.Command{
 	Short: "Remove a task from a sprint",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		sid, err := db.ResolveSprintID(d, args[0])
 		if err != nil {
 			return err
@@ -182,7 +182,7 @@ var sprintTasksCmd = &cobra.Command{
 	Short: "List tasks in a sprint",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		d, _ := db.Open()
+		d := mustOpen()
 		sid, err := db.ResolveSprintID(d, args[0])
 		if err != nil {
 			return err

@@ -40,7 +40,7 @@ var projectListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all projects",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projects, err := db.ListProjects(conn)
 		if err != nil {
 			return err
@@ -76,7 +76,7 @@ var projectCreateCmd = &cobra.Command{
 		metadata, _ := cmd.Flags().GetString("metadata")
 		wipLimit, _ := cmd.Flags().GetInt("wip-limit")
 
-		conn, _ := db.Open()
+		conn := mustOpen()
 		p, err := db.CreateProject(conn, prefix, name, phase, phaseType, externalID, metadata, wipLimit)
 		if err != nil {
 			return err
@@ -99,7 +99,7 @@ var projectDeleteCmd = &cobra.Command{
 		"retype the prefix to confirm unless --yes is given.",
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		p, err := db.GetProjectByPrefix(conn, args[0])
 		if err != nil {
 			return fmt.Errorf("project %q not found", args[0])

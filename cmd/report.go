@@ -61,7 +61,7 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Cross-project dashboard or single-project detail",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 
 		today := time.Now().Format("2006-01-02")
@@ -236,7 +236,7 @@ var velocityCmd = &cobra.Command{
 	Use:   "velocity",
 	Short: "Throughput and estimation accuracy over N weeks",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		weeks, _ := cmd.Flags().GetInt("weeks")
 
@@ -355,7 +355,7 @@ var healthCmd = &cobra.Command{
 	Use:   "health",
 	Short: "Health score breakdown for a project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 
 		if projectPrefix == "" {
@@ -457,7 +457,7 @@ var snapshotCmd = &cobra.Command{
 	Use:   "snapshot",
 	Short: "Record point-in-time metrics snapshot",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 
 		if projectPrefix == "" {

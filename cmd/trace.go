@@ -58,7 +58,7 @@ var commitsScanCmd = &cobra.Command{
 	Use:   "scan",
 	Short: "Scan git log and link commits to tasks",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		sinceFlag, _ := cmd.Flags().GetString("since")
@@ -161,7 +161,7 @@ var deployRecordCmd = &cobra.Command{
 	Use:   "record",
 	Short: "Record a deploy",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		commitHash, _ := cmd.Flags().GetString("commit")
@@ -205,7 +205,7 @@ var deployListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent deploys",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		limit, _ := cmd.Flags().GetInt("limit")

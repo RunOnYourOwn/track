@@ -3,11 +3,25 @@ package cmd
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/RunOnYourOwn/track/internal/db"
 )
+
+// mustOpen opens the database or aborts with a clean message. A DB that won't
+// open is fatal for any CLI command, so this replaces the old `conn, _ :=
+// db.Open()` pattern that silently swallowed the error and then panicked on a
+// nil connection at first use.
+func mustOpen() *sql.DB {
+	conn, err := db.Open()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "track: cannot open database: %v\n", err)
+		os.Exit(1)
+	}
+	return conn
+}
 
 func resolveID(displayID string) (string, error) {
 	// If it looks like a ULID (26 chars), use directly
@@ -26,7 +40,7 @@ func resolveID(displayID string) (string, error) {
 		return "", fmt.Errorf("invalid seq in %q", displayID)
 	}
 
-	conn, _ := db.Open()
+	conn := mustOpen()
 	task, err := db.GetTaskByDisplayID(conn, parts[0], seq)
 	if err != nil {
 		return "", fmt.Errorf("task %q not found", displayID)
