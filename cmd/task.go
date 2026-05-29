@@ -41,6 +41,7 @@ func init() {
 	taskCreateCmd.Flags().String("parent", "", "Parent task ID")
 	taskCreateCmd.Flags().String("source", "planned", "Source: planned, discovered, stakeholder, bug, debt")
 	taskCreateCmd.Flags().String("context", "", "Agent context JSON")
+	taskCreateCmd.Flags().String("start-date", "", "Start date (YYYY-MM-DD)")
 	taskCreateCmd.Flags().String("due", "", "Due date (YYYY-MM-DD)")
 	_ = taskCreateCmd.MarkFlagRequired("project")
 	_ = taskCreateCmd.MarkFlagRequired("title")
@@ -65,6 +66,7 @@ func init() {
 	taskEditCmd.Flags().String("estimate", "", "T-shirt size: XS, S, M, L, XL")
 	taskEditCmd.Flags().Float64("hours", 0, "Estimated hours")
 	taskEditCmd.Flags().Int("agent-minutes", 0, "Estimated agent minutes")
+	taskEditCmd.Flags().String("start-date", "", "Start date (YYYY-MM-DD)")
 	taskEditCmd.Flags().String("due", "", "Due date (YYYY-MM-DD)")
 	taskEditCmd.Flags().String("tags", "", "Comma-separated tags")
 	taskEditCmd.Flags().String("parent", "", "Parent task ID (or 'none' to unparent)")
@@ -169,6 +171,7 @@ var taskCreateCmd = &cobra.Command{
 		source, _ := cmd.Flags().GetString("source")
 		agentCtx, _ := cmd.Flags().GetString("context")
 		due, _ := cmd.Flags().GetString("due")
+		startDate, _ := cmd.Flags().GetString("start-date")
 
 		parentID := ""
 		if parent != "" {
@@ -190,6 +193,7 @@ var taskCreateCmd = &cobra.Command{
 			ParentID:             parentID,
 			SourceType:           source,
 			AgentContext:         agentCtx,
+			StartDate:            startDate,
 			DueDate:              due,
 		})
 		if err != nil {
@@ -324,6 +328,9 @@ var taskEditCmd = &cobra.Command{
 		}
 		if v, _ := cmd.Flags().GetInt("agent-minutes"); v > 0 {
 			fields["estimate_agent_minutes"] = strconv.Itoa(v)
+		}
+		if v, _ := cmd.Flags().GetString("start-date"); v != "" {
+			fields["start_date"] = v
 		}
 		if v, _ := cmd.Flags().GetString("due"); v != "" {
 			fields["due_date"] = v
