@@ -6,8 +6,12 @@ func TestComputeGraph(t *testing.T) {
 	d := OpenTestDB(t)
 	pid := mkTestProject(t, d, "GR")
 
-	mk := func(title string) string {
-		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title})
+	mk := func(title, typ, parent string) string {
+		opts := CreateTaskOpts{ProjectID: pid, Title: title, Type: typ}
+		if parent != "" {
+			opts.ParentID = parent
+		}
+		tk, err := CreateTask(d, opts)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -19,18 +23,19 @@ func TestComputeGraph(t *testing.T) {
 		}
 	}
 
-	a, b, c, e := mk("A"), mk("B"), mk("C"), mk("D")
-	// A blocks B, B blocks C, A blocks D  (from blocks to → from is predecessor)
+	// Hierarchy: Epic > Feature > {A, B, C}
+	epic := mk("Epic", "epic", "")
+	feat := mk("Feature", "feature", epic)
+	a := mk("A", "task", feat)
+	b := mk("B", "task", feat)
+	c := mk("C", "task", feat)
+	// Dependencies (from blocks to): A → B → C
 	must(CreateDependency(d, a, b, "blocks", ""))
 	must(CreateDependency(d, b, c, "blocks", ""))
-	must(CreateDependency(d, a, e, "blocks", ""))
 
 	g, err := ComputeGraph(d, pid, false)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if g.HasCycle {
-		t.Fatal("did not expect a cycle")
 	}
 	lay := map[string]int{}
 	crit := map[string]bool{}
@@ -38,22 +43,45 @@ func TestComputeGraph(t *testing.T) {
 		lay[n.ID] = n.Layer
 		crit[n.ID] = n.Critical
 	}
-	if lay[a] != 0 || lay[b] != 1 || lay[e] != 1 || lay[c] != 2 {
-		t.Fatalf("layers wrong: A=%d B=%d D=%d C=%d", lay[a], lay[b], lay[e], lay[c])
+
+	// Layer = hierarchy depth.
+	if lay[epic] != 0 || lay[feat] != 1 || lay[a] != 2 || lay[b] != 2 || lay[c] != 2 {
+		t.Fatalf("hierarchy depth wrong: epic=%d feat=%d a=%d b=%d c=%d", lay[epic], lay[feat], lay[a], lay[b], lay[c])
 	}
 	if g.MaxLayer != 2 {
 		t.Fatalf("max layer: got %d want 2", g.MaxLayer)
 	}
-	// Longest chain is A→B→C; D is a side branch and not critical.
-	if !crit[a] || !crit[b] || !crit[c] || crit[e] {
-		t.Fatalf("critical path wrong: A=%v B=%v C=%v D=%v", crit[a], crit[b], crit[c], crit[e])
+
+	// Edges: 4 contains (epic→feat, feat→a, feat→b, feat→c) + 2 blocks (a→b, b→c).
+	contains, blocks := 0, 0
+	for _, e := range g.Edges {
+		switch e.Kind {
+		case "contains":
+			contains++
+		case "blocks":
+			blocks++
+		default:
+			t.Fatalf("unexpected edge kind %q", e.Kind)
+		}
 	}
-	if len(g.Edges) != 3 {
-		t.Fatalf("edges: got %d want 3", len(g.Edges))
+	if contains != 4 || blocks != 2 {
+		t.Fatalf("edges: got contains=%d blocks=%d want 4/2", contains, blocks)
 	}
 
-	// A 2-cycle must be detected and must not hang the layering.
-	x, y := mk("X"), mk("Y")
+	// Critical path is the longest blocks chain A→B→C; hierarchy nodes aren't on it.
+	if !crit[a] || !crit[b] || !crit[c] {
+		t.Fatalf("blocks critical path wrong: a=%v b=%v c=%v", crit[a], crit[b], crit[c])
+	}
+	if crit[epic] || crit[feat] {
+		t.Fatalf("hierarchy nodes should not be on the blocks critical path")
+	}
+	if g.HasCycle {
+		t.Fatal("did not expect a cycle")
+	}
+
+	// A blocks cycle must be detected without hanging.
+	x := mk("X", "task", feat)
+	y := mk("Y", "task", feat)
 	must(CreateDependency(d, x, y, "blocks", ""))
 	must(CreateDependency(d, y, x, "blocks", ""))
 	g2, err := ComputeGraph(d, pid, false)

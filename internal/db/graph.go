@@ -5,32 +5,35 @@ import (
 	"sort"
 )
 
-// Dependency-graph layering + critical path, computed server-side. The UI keeps
-// only view-specific layout (within-layer ordering, coordinate math, rendering).
+// Combined relationship graph, computed server-side. Nodes are laid out by their
+// hierarchy depth (epic→feature→task→subtask); edges are tagged "contains"
+// (parent→child) or "blocks" (dependency). The critical path is the longest
+// chain through the blocks edges. The UI keeps only view-specific layout
+// (within-layer ordering, coordinate math, rendering).
 
 type GraphNode struct {
 	ID       string `json:"id"`
-	Layer    int    `json:"layer"`
+	Layer    int    `json:"layer"` // hierarchy depth: epics at 0, their features at 1, ...
 	Critical bool   `json:"critical"`
 }
 
 type GraphEdge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
+	Kind string `json:"kind"` // "contains" (parent→child) | "blocks" (dependency)
 }
 
 type Graph struct {
 	Nodes    []GraphNode `json:"nodes"`
 	Edges    []GraphEdge `json:"edges"`
 	MaxLayer int         `json:"max_layer"`
-	HasCycle bool        `json:"has_cycle"`
+	HasCycle bool        `json:"has_cycle"` // a dependency (blocks) cycle was detected
 }
 
-// ComputeGraph builds the dependency DAG for a project: longest-path layer per
-// connected task and the critical-path set. Cycles are detected and their
-// back-edges are ignored for layering (deterministically, by task order) and
-// reported via HasCycle — rather than the old client code silently pinning a
-// mid-cycle node to layer 0.
+// ComputeGraph returns every task (honoring includeDone) as a node positioned by
+// its hierarchy depth, with parent→child "contains" edges and "blocks"
+// dependency edges. The critical path is the longest blocks chain; blocks cycles
+// are detected (their back-edges ignored) and reported via HasCycle.
 func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, error) {
 	tasks, err := ListTasks(conn, ListTaskOpts{ProjectID: projectID})
 	if err != nil {
@@ -45,17 +48,61 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 			included[t.ID] = true
 		}
 	}
+	// Parent links among included tasks (a parent filtered out by includeDone
+	// makes its child a root in the graph).
+	parentOf := map[string]string{}
+	for _, t := range tasks {
+		if included[t.ID] && t.ParentID != nil && included[*t.ParentID] {
+			parentOf[t.ID] = *t.ParentID
+		}
+	}
 
+	lessBySeq := func(a, b string) bool {
+		if seqByID[a] != seqByID[b] {
+			return seqByID[a] < seqByID[b]
+		}
+		return a < b
+	}
+
+	ids := make([]string, 0, len(included))
+	for id := range included {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return lessBySeq(ids[i], ids[j]) })
+
+	// Hierarchy depth. The parent chain is acyclic (parent_id is cycle-guarded on
+	// write), so plain memoized recursion is safe.
+	depth := map[string]int{}
+	var hdepth func(id string) int
+	hdepth = func(id string) int {
+		if d, ok := depth[id]; ok {
+			return d
+		}
+		p, ok := parentOf[id]
+		if !ok {
+			depth[id] = 0
+			return 0
+		}
+		d := hdepth(p) + 1
+		depth[id] = d
+		return d
+	}
+
+	var edges []GraphEdge
+	for _, id := range ids {
+		if p, ok := parentOf[id]; ok {
+			edges = append(edges, GraphEdge{From: p, To: id, Kind: "contains"})
+		}
+	}
+
+	// Blocks dependency edges among included tasks, de-duplicated.
 	rawEdges, err := projectBlockEdges(conn, projectID)
 	if err != nil {
 		return nil, err
 	}
-
-	// Keep only edges between two included tasks, de-duplicated.
 	seen := map[string]bool{}
-	var edges []GraphEdge
-	preds := map[string][]string{}
-	connected := map[string]bool{}
+	blocksPreds := map[string][]string{}
+	blockNodes := map[string]bool{}
 	for _, e := range rawEdges {
 		if !included[e.From] || !included[e.To] {
 			continue
@@ -65,43 +112,37 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 			continue
 		}
 		seen[k] = true
-		edges = append(edges, e)
-		preds[e.To] = append(preds[e.To], e.From)
-		connected[e.From] = true
-		connected[e.To] = true
+		edges = append(edges, GraphEdge{From: e.From, To: e.To, Kind: "blocks"})
+		blocksPreds[e.To] = append(blocksPreds[e.To], e.From)
+		blockNodes[e.From] = true
+		blockNodes[e.To] = true
 	}
-
-	// Stable node order so cycle-breaking and tie-breaks are deterministic.
-	nodeIDs := make([]string, 0, len(connected))
-	for id := range connected {
-		nodeIDs = append(nodeIDs, id)
-	}
-	lessBySeq := func(a, b string) bool {
-		if seqByID[a] != seqByID[b] {
-			return seqByID[a] < seqByID[b]
-		}
-		return a < b
-	}
-	sort.Slice(nodeIDs, func(i, j int) bool { return lessBySeq(nodeIDs[i], nodeIDs[j]) })
-	for id := range preds {
-		ps := preds[id]
+	for id := range blocksPreds {
+		ps := blocksPreds[id]
 		sort.Slice(ps, func(i, j int) bool { return lessBySeq(ps[i], ps[j]) })
 	}
 
-	// Longest-path layering via DFS. state: 0=unvisited, 1=on-stack, 2=done.
-	layer := map[string]int{}
+	// Critical path = longest chain through the blocks edges. Computed over a
+	// separate longest-path depth (NOT the hierarchy depth used for layout).
+	blockIDs := make([]string, 0, len(blockNodes))
+	for id := range blockNodes {
+		blockIDs = append(blockIDs, id)
+	}
+	sort.Slice(blockIDs, func(i, j int) bool { return lessBySeq(blockIDs[i], blockIDs[j]) })
+
+	bdepth := map[string]int{}
 	state := map[string]int{}
 	hasCycle := false
 	var visit func(id string) int
 	visit = func(id string) int {
 		if state[id] == 2 {
-			return layer[id]
+			return bdepth[id]
 		}
 		state[id] = 1
 		best := 0
-		for _, p := range preds[id] {
+		for _, p := range blocksPreds[id] {
 			if state[p] == 1 {
-				hasCycle = true // back-edge: ignore it for layering
+				hasCycle = true // back-edge: ignore it
 				continue
 			}
 			if l := visit(p) + 1; l > best {
@@ -109,38 +150,36 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 			}
 		}
 		state[id] = 2
-		layer[id] = best
+		bdepth[id] = best
 		return best
 	}
-	for _, id := range nodeIDs {
+	for _, id := range blockIDs {
 		visit(id)
 	}
+	critical := criticalPath(blockIDs, blocksPreds, bdepth)
 
 	maxLayer := 0
-	for _, l := range layer {
-		if l > maxLayer {
-			maxLayer = l
+	nodes := make([]GraphNode, 0, len(ids))
+	for _, id := range ids {
+		d := hdepth(id)
+		if d > maxLayer {
+			maxLayer = d
 		}
+		nodes = append(nodes, GraphNode{ID: id, Layer: d, Critical: critical[id]})
 	}
 
-	critical := criticalPath(nodeIDs, preds, layer)
-
-	nodes := make([]GraphNode, 0, len(nodeIDs))
-	for _, id := range nodeIDs {
-		nodes = append(nodes, GraphNode{ID: id, Layer: layer[id], Critical: critical[id]})
-	}
 	return &Graph{Nodes: nodes, Edges: edges, MaxLayer: maxLayer, HasCycle: hasCycle}, nil
 }
 
 // criticalPath walks back from the deepest node, always taking the
-// strictly-lower-layer predecessor with the highest layer (the longest chain).
-func criticalPath(nodeIDs []string, preds map[string][]string, layer map[string]int) map[string]bool {
+// strictly-lower-depth predecessor with the highest depth (the longest chain).
+func criticalPath(nodeIDs []string, preds map[string][]string, depthByID map[string]int) map[string]bool {
 	crit := map[string]bool{}
 	end := ""
 	deepest := -1
 	for _, id := range nodeIDs { // nodeIDs is already in stable order
-		if layer[id] > deepest {
-			deepest = layer[id]
+		if depthByID[id] > deepest {
+			deepest = depthByID[id]
 			end = id
 		}
 	}
@@ -151,13 +190,13 @@ func criticalPath(nodeIDs []string, preds map[string][]string, layer map[string]
 	cur := end
 	for {
 		best := ""
-		bestLayer := -1
+		bestDepth := -1
 		for _, p := range preds[cur] {
-			if crit[p] || layer[p] >= layer[cur] {
+			if crit[p] || depthByID[p] >= depthByID[cur] {
 				continue // guard against cycles / non-decreasing steps
 			}
-			if layer[p] > bestLayer {
-				bestLayer = layer[p]
+			if depthByID[p] > bestDepth {
+				bestDepth = depthByID[p]
 				best = p
 			}
 		}

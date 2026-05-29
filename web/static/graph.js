@@ -73,48 +73,40 @@ function _drawGraph() {
     return;
   }
 
-  // Edges, layers and critical path are computed server-side (the connected node
-  // set already reflects the done filter). The UI only lays them out.
-  const validEdges = _graph.edges.map(e => ({ from_task_id: e.from, to_task_id: e.to }));
+  // Nodes, edges (hierarchy + dependency), layers and critical path are computed
+  // server-side; the UI only lays them out and renders.
+  const validEdges = _graph.edges.map(e => ({ from_task_id: e.from, to_task_id: e.to, kind: e.kind }));
   const taskById = new Map(tasks.map(t => [t.id, t]));
   const doneCount = _allTasks.filter(t => t.status === 'done').length;
-
-  if (validEdges.length === 0) {
-    render(`<div class="page-graph">
-      <div class="timeline-toolbar">
-        ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
-      </div>
-      <div id="graph-container"><div class="empty-state">
-        No active tasks with dependencies.<br>
-        Link tasks with <code>track task link</code> to see the graph.
-      </div></div>
-    </div>`);
-    const showDoneEl = document.getElementById('graph-show-done');
-    if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
-    return;
-  }
 
   const layer = new Map(_graph.nodes.map(n => [n.id, n.layer]));
   const criticalPath = new Set(_graph.nodes.filter(n => n.critical).map(n => n.id));
   const connectedIds = new Set(_graph.nodes.map(n => n.id));
   const connectedTasks = tasks.filter(t => connectedIds.has(t.id));
 
-  // Group tasks by parent feature for swimlane ordering within each layer
-  const featureOrder = {};
-  tasks.filter(t => (t.type || 'task') === 'feature').forEach((f, i) => { featureOrder[f.id] = i; });
+  // Order nodes within each layer by a DFS of the hierarchy, so a subtree stays
+  // contiguous and children sit near their parent.
+  const childrenOf = {};
+  connectedTasks.forEach(t => {
+    if (t.parent_id && connectedIds.has(t.parent_id)) {
+      (childrenOf[t.parent_id] = childrenOf[t.parent_id] || []).push(t);
+    }
+  });
+  Object.values(childrenOf).forEach(arr => arr.sort((a, b) => (a.seq || 0) - (b.seq || 0)));
+  const roots = connectedTasks
+    .filter(t => !(t.parent_id && connectedIds.has(t.parent_id)))
+    .sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  const dfsOrder = new Map();
+  (function walk(nodes) {
+    nodes.forEach(n => { dfsOrder.set(n.id, dfsOrder.size); walk(childrenOf[n.id] || []); });
+  })(roots);
 
-  // Sort nodes within each layer by: feature group, then seq
   const maxLayer = _graph.max_layer;
   const layerNodes = [];
   for (let l = 0; l <= maxLayer; l++) {
     const nodesInLayer = connectedTasks
       .filter(t => layer.get(t.id) === l)
-      .sort((a, b) => {
-        const fa = featureOrder[a.parent_id] ?? 99;
-        const fb = featureOrder[b.parent_id] ?? 99;
-        if (fa !== fb) return fa - fb;
-        return (a.seq || 0) - (b.seq || 0);
-      });
+      .sort((a, b) => (dfsOrder.get(a.id) ?? 0) - (dfsOrder.get(b.id) ?? 0));
     layerNodes.push(nodesInLayer);
   }
 
@@ -204,7 +196,7 @@ function _drawGraph() {
   // Arrow markers
   const defs = svg.append('defs');
   defs.append('marker')
-    .attr('id', 'dag-arrow')
+    .attr('id', 'dag-arrow-blocks')
     .attr('viewBox', '0 -4 8 8')
     .attr('refX', 8)
     .attr('refY', 0)
@@ -213,7 +205,7 @@ function _drawGraph() {
     .attr('orient', 'auto')
     .append('path')
     .attr('d', 'M0,-4L8,0L0,4')
-    .attr('fill', '#30363d');
+    .attr('fill', '#58a6ff');
 
   defs.append('marker')
     .attr('id', 'dag-arrow-crit')
@@ -239,16 +231,29 @@ function _drawGraph() {
 
     const midX = (x1 + x2) / 2;
     const path = `M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`;
-    const isCrit = criticalPath.has(e.from_task_id) && criticalPath.has(e.to_task_id);
 
+    if (e.kind === 'contains') {
+      // Hierarchy skeleton: quiet grey line, no arrowhead.
+      edgeG.append('path')
+        .attr('d', path)
+        .attr('fill', 'none')
+        .attr('stroke', '#56606b')
+        .attr('stroke-width', 1.5)
+        .attr('class', `edge-${e.from_task_id} edge-${e.to_task_id}`)
+        .style('opacity', 0.7);
+      return;
+    }
+
+    // Dependency (blocks): arrowed; red on the critical chain, else blue.
+    const isCrit = criticalPath.has(e.from_task_id) && criticalPath.has(e.to_task_id);
     edgeG.append('path')
       .attr('d', path)
       .attr('fill', 'none')
-      .attr('stroke', isCrit ? '#f85149' : '#30363d')
+      .attr('stroke', isCrit ? '#f85149' : '#58a6ff')
       .attr('stroke-width', isCrit ? 2.5 : 1.5)
-      .attr('marker-end', isCrit ? 'url(#dag-arrow-crit)' : 'url(#dag-arrow)')
+      .attr('marker-end', isCrit ? 'url(#dag-arrow-crit)' : 'url(#dag-arrow-blocks)')
       .attr('class', `edge-${e.from_task_id} edge-${e.to_task_id}`)
-      .style('opacity', isCrit ? 0.9 : 1);
+      .style('opacity', isCrit ? 0.95 : 0.85);
   });
 
   // Draw nodes
@@ -343,15 +348,24 @@ function _drawGraph() {
     { label: 'In Progress', color: '#58a6ff' },
     { label: 'Done', color: '#3fb950' },
     { label: 'Waiting', color: '#d29922' },
-    { label: 'Critical Path', color: '#f85149' },
+    { label: 'Contains', color: '#56606b', line: true },
+    { label: 'Blocks', color: '#58a6ff', line: true },
+    { label: 'Critical Path', color: '#f85149', line: true },
   ];
-  legendItems.forEach((item, i) => {
-    const lx = i * 120;
-    legendG.append('circle').attr('cx', lx).attr('cy', 0).attr('r', 5).attr('fill', item.color);
+  let lx = 0;
+  legendItems.forEach(item => {
+    if (item.line) {
+      legendG.append('line')
+        .attr('x1', lx - 6).attr('y1', 0).attr('x2', lx + 6).attr('y2', 0)
+        .attr('stroke', item.color).attr('stroke-width', 2.5);
+    } else {
+      legendG.append('circle').attr('cx', lx).attr('cy', 0).attr('r', 5).attr('fill', item.color);
+    }
     legendG.append('text')
       .attr('x', lx + 12).attr('y', 4)
       .attr('fill', '#8b949e').attr('font-size', '11px')
       .text(item.label);
+    lx += 22 + item.label.length * 7;
   });
 }
 
