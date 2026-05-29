@@ -181,4 +181,3 @@ func scanProject(row scanner) (*models.Project, error) {
 	p.UpdatedAt, _ = parseTime(updatedAt)
 	return &p, nil
 }
-

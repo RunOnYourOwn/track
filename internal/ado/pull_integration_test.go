@@ -178,12 +178,12 @@ func TestUpsertWorkItemCreate(t *testing.T) {
 		ID:  42,
 		Rev: 3,
 		Fields: map[string]interface{}{
-			"System.Title":        "New Work Item",
-			"System.Description":  "<p>Description</p>",
-			"System.State":        "New",
-			"System.WorkItemType": "User Story",
-			"System.AreaPath":     "TestProj\\Team1",
-			"System.IterationPath": "TestProj\\Sprint 1",
+			"System.Title":                         "New Work Item",
+			"System.Description":                   "<p>Description</p>",
+			"System.State":                         "New",
+			"System.WorkItemType":                  "User Story",
+			"System.AreaPath":                      "TestProj\\Team1",
+			"System.IterationPath":                 "TestProj\\Sprint 1",
 			"Microsoft.VSTS.Scheduling.TargetDate": "2026-07-01T00:00:00Z",
 		},
 	}
@@ -235,11 +235,11 @@ func TestUpsertWorkItemUpdate(t *testing.T) {
 		ID:  55,
 		Rev: 5, // newer than stored rev 2
 		Fields: map[string]interface{}{
-			"System.Title":        "Updated Title",
-			"System.Description":  "Updated desc",
-			"System.State":        "Active",
-			"System.WorkItemType": "Task",
-			"System.AreaPath":     "TestProj\\Area",
+			"System.Title":         "Updated Title",
+			"System.Description":   "Updated desc",
+			"System.State":         "Active",
+			"System.WorkItemType":  "Task",
+			"System.AreaPath":      "TestProj\\Area",
 			"System.IterationPath": "TestProj\\Sprint 2",
 		},
 	}

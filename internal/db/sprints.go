@@ -40,7 +40,6 @@ func ResolveSprintID(d *sql.DB, idOrPrefix string) (string, error) {
 	}
 }
 
-
 type CreateSprintOpts struct {
 	ProjectID string
 	Name      string

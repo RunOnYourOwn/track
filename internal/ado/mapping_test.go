@@ -35,9 +35,9 @@ func TestMapStateToStatus(t *testing.T) {
 
 func TestMapStatusToState(t *testing.T) {
 	cases := []struct {
-		input   string
-		want    string
-		wantOK  bool
+		input  string
+		want   string
+		wantOK bool
 	}{
 		{"in_progress", "In Progress", true},
 		{"done", "Done", true},

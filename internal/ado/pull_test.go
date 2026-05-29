@@ -12,9 +12,9 @@ func TestIsLocalDirty(t *testing.T) {
 	now := time.Now().UTC()
 
 	cases := []struct {
-		name   string
-		task   *db.TaskRecord
-		want   bool
+		name string
+		task *db.TaskRecord
+		want bool
 	}{
 		{
 			name: "empty agent_context",

@@ -111,4 +111,3 @@ func scanBlocker(s blockerScanner) (*models.Blocker, error) {
 	}
 	return &b, nil
 }
-

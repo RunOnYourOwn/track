@@ -30,3 +30,16 @@ func testDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { db.Close() })
 	return db
 }
+
+func TestRunMigrationsRejectsOutOfOrder(t *testing.T) {
+	d := testDB(t)
+	if err := runMigrations(d, []migration{{version: 2}, {version: 1}}); err == nil {
+		t.Fatal("expected out-of-order migration versions to be rejected")
+	}
+	if err := runMigrations(d, []migration{{version: 1}, {version: 1}}); err == nil {
+		t.Fatal("expected duplicate migration versions to be rejected")
+	}
+	if err := runMigrations(d, []migration{{version: 1}, {version: 2}}); err != nil {
+		t.Fatalf("strictly-increasing versions should pass: %v", err)
+	}
+}
