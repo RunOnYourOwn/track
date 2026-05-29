@@ -40,7 +40,7 @@ var sessionStartCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start a new session",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		branch, _ := cmd.Flags().GetString("branch")
 
@@ -77,7 +77,7 @@ var sessionEndCmd = &cobra.Command{
 	Use:   "end",
 	Short: "End the current session",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		summary, _ := cmd.Flags().GetString("summary")
 
 		session, err := db.GetCurrentSession(conn, "")
@@ -102,7 +102,7 @@ var sessionCurrentCmd = &cobra.Command{
 	Use:   "current",
 	Short: "Show active session",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		session, _ := db.GetCurrentSession(conn, "")
 		if session == nil {
 			fmt.Println("No active session.")
@@ -127,7 +127,7 @@ var sessionListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent sessions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		limit, _ := cmd.Flags().GetInt("limit")
 
@@ -174,7 +174,7 @@ var sessionLogCmd = &cobra.Command{
 	Short: "Log time to a task in the current session",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		hours, _ := cmd.Flags().GetFloat64("hours")
 		note, _ := cmd.Flags().GetString("note")
 

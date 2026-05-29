@@ -75,7 +75,7 @@ var decisionCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Record a new decision",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		p, err := db.GetProjectByPrefix(conn, projectPrefix)
@@ -133,7 +133,7 @@ var decisionListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List decisions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		statusStr, _ := cmd.Flags().GetString("status")
@@ -189,7 +189,7 @@ var decisionResolveCmd = &cobra.Command{
 	Short: "Mark a decision as resolved with the decision made and rationale",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		decisionText, _ := cmd.Flags().GetString("decision")
 		rationale, _ := cmd.Flags().GetString("rationale")
@@ -225,7 +225,7 @@ var learnCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Record a new learning",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		p, err := db.GetProjectByPrefix(conn, projectPrefix)
@@ -285,7 +285,7 @@ var learnSearchCmd = &cobra.Command{
 	Short: "Search learnings by title or body",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		learnings, err := db.SearchLearnings(conn, "", args[0])
 		if err != nil {
@@ -318,7 +318,7 @@ var learnListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List learnings",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		category, _ := cmd.Flags().GetString("category")

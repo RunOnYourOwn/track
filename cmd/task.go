@@ -87,7 +87,7 @@ var taskListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List tasks",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		statusStr, _ := cmd.Flags().GetString("status")
@@ -155,7 +155,7 @@ var taskCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new task",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		p, err := db.GetProjectByPrefix(conn, projectPrefix)
@@ -217,7 +217,7 @@ var taskGetCmd = &cobra.Command{
 	Short: "Get task details",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		taskID, err := resolveID(args[0])
 		if err != nil {
 			return err
@@ -249,7 +249,7 @@ var taskMoveCmd = &cobra.Command{
 	Short: "Move task to a status",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		status, _ := cmd.Flags().GetString("status")
 
 		taskID, err := resolveID(args[0])
@@ -269,7 +269,7 @@ var taskDoneCmd = &cobra.Command{
 	Short: "Mark task as done",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		hours, _ := cmd.Flags().GetFloat64("actual-hours")
 		note, _ := cmd.Flags().GetString("note")
 
@@ -290,7 +290,7 @@ var taskCancelCmd = &cobra.Command{
 	Short: "Cancel a task (terminal, not completed) with an optional reason",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		reason, _ := cmd.Flags().GetString("reason")
 
 		taskID, err := resolveID(args[0])
@@ -310,7 +310,7 @@ var taskDeleteCmd = &cobra.Command{
 	Short: "Delete a task",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		_ = conn
 		taskID, err := resolveID(args[0])
 		if err != nil {
@@ -325,7 +325,7 @@ var taskEditCmd = &cobra.Command{
 	Short: "Edit task fields",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		taskID, err := resolveID(args[0])
 		if err != nil {
 			return err
@@ -405,7 +405,7 @@ var taskLinkCmd = &cobra.Command{
 	Short: "Create dependency between tasks",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		_ = conn
 		blocksStr, _ := cmd.Flags().GetString("blocks")
 		depType, _ := cmd.Flags().GetString("type")
@@ -433,7 +433,7 @@ var taskUnlinkCmd = &cobra.Command{
 	Short: "Remove dependency",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		_ = conn
 		blocksStr, _ := cmd.Flags().GetString("blocks")
 
@@ -453,7 +453,7 @@ var taskNextCmd = &cobra.Command{
 	Use:   "next",
 	Short: "Suggest next task to work on",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 		projectPrefix, _ := cmd.Flags().GetString("project")
 
 		var projectID string

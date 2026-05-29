@@ -54,7 +54,7 @@ var blockerCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new blocker",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		title, _ := cmd.Flags().GetString("title")
@@ -110,7 +110,7 @@ var blockerResolveCmd = &cobra.Command{
 	Short: "Mark a blocker as resolved",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		// Support both full ULID and short prefix (8 chars)
 		id := args[0]
@@ -132,7 +132,7 @@ var blockerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List blockers for a project",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		conn, _ := db.Open()
+		conn := mustOpen()
 
 		projectPrefix, _ := cmd.Flags().GetString("project")
 		openOnly, _ := cmd.Flags().GetBool("open")
