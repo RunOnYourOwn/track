@@ -44,7 +44,8 @@ func ComputeGraph(conn *sql.DB, projectID string, includeDone bool) (*Graph, err
 	seqByID := map[string]int{}
 	for _, t := range tasks {
 		seqByID[t.ID] = t.Seq
-		if includeDone || t.Status != "done" {
+		// Closed states (done + cancelled) are hidden unless includeDone.
+		if includeDone || (t.Status != "done" && t.Status != "cancelled") {
 			included[t.ID] = true
 		}
 	}

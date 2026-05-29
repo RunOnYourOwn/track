@@ -145,6 +145,9 @@ var orderedMigrations = []migration{
 	{version: 1, name: "add tasks.start_date", stmts: []string{
 		`ALTER TABLE tasks ADD COLUMN start_date TEXT`,
 	}},
+	{version: 2, name: "add tasks.completion_note", stmts: []string{
+		`ALTER TABLE tasks ADD COLUMN completion_note TEXT`,
+	}},
 }
 
 func runMigrations(db *sql.DB, migrations []migration) error {

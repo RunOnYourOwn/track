@@ -68,9 +68,17 @@ func ComputeInsights(db *sql.DB, days int) ([]ProjectInsights, error) {
 	out := make([]ProjectInsights, 0, len(projects))
 	for i := range projects {
 		p := &projects[i]
-		tasks, err := ListTasks(db, ListTaskOpts{ProjectID: p.ID})
+		allTasks, err := ListTasks(db, ListTaskOpts{ProjectID: p.ID})
 		if err != nil {
 			return nil, err
+		}
+		// Cancelled work is descoped — exclude it from every insight metric
+		// (throughput, cycle time, accuracy, distribution, WIP).
+		tasks := allTasks[:0:0]
+		for _, t := range allTasks {
+			if t.Status != "cancelled" {
+				tasks = append(tasks, t)
+			}
 		}
 
 		windowed := tasks

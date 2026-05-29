@@ -19,6 +19,7 @@ func init() {
 	taskCmd.AddCommand(taskGetCmd)
 	taskCmd.AddCommand(taskMoveCmd)
 	taskCmd.AddCommand(taskDoneCmd)
+	taskCmd.AddCommand(taskCancelCmd)
 	taskCmd.AddCommand(taskDeleteCmd)
 	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskLinkCmd)
@@ -50,6 +51,8 @@ func init() {
 	_ = taskMoveCmd.MarkFlagRequired("status")
 
 	taskDoneCmd.Flags().Float64("actual-hours", 0, "Actual hours spent")
+	taskDoneCmd.Flags().String("note", "", "Completion note (what shipped / outcome)")
+	taskCancelCmd.Flags().String("reason", "", "Why this task is being cancelled (stored in completion_note)")
 
 	taskLinkCmd.Flags().String("blocks", "", "Task ID that this task blocks")
 	taskLinkCmd.Flags().String("type", "blocks", "Dependency type: blocks, soft, informational")
@@ -268,15 +271,36 @@ var taskDoneCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		conn, _ := db.Open()
 		hours, _ := cmd.Flags().GetFloat64("actual-hours")
+		note, _ := cmd.Flags().GetString("note")
 
 		taskID, err := resolveID(args[0])
 		if err != nil {
 			return err
 		}
-		if err := db.CompleteTask(conn, taskID, hours); err != nil {
+		if err := db.CompleteTask(conn, taskID, hours, note); err != nil {
 			return err
 		}
 		fmt.Println("Done ✓")
+		return nil
+	},
+}
+
+var taskCancelCmd = &cobra.Command{
+	Use:   "cancel [id]",
+	Short: "Cancel a task (terminal, not completed) with an optional reason",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		conn, _ := db.Open()
+		reason, _ := cmd.Flags().GetString("reason")
+
+		taskID, err := resolveID(args[0])
+		if err != nil {
+			return err
+		}
+		if err := db.CancelTask(conn, taskID, reason); err != nil {
+			return err
+		}
+		fmt.Println("Cancelled ✗")
 		return nil
 	},
 }

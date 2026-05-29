@@ -422,9 +422,10 @@ type updateTaskRequest struct {
 	ParentID    *string `json:"parent_id"`
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
-	// Pointers so an explicit "" can clear the date (omitted = leave unchanged).
+	// Pointers so an explicit "" can clear the value (omitted = leave unchanged).
 	StartDate        *string `json:"start_date"`
 	DueDate          *string `json:"due_date"`
+	CompletionNote   *string `json:"completion_note"`
 	Description      string  `json:"description"`
 	Type             string  `json:"type"`
 	EstimateSize     string  `json:"estimate_size"`
@@ -452,17 +453,37 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	note := ""
+	if req.CompletionNote != nil {
+		note = *req.CompletionNote
+	}
+
 	if req.Status != "" {
-		if req.Status == "done" {
-			if err := db.CompleteTask(h.conn, id, req.ActualHours); err != nil {
+		switch req.Status {
+		case "done":
+			if err := db.CompleteTask(h.conn, id, req.ActualHours, note); err != nil {
 				writeServerError(w, err)
 				return
 			}
-		} else {
+		case "cancelled":
+			if err := db.CancelTask(h.conn, id, note); err != nil {
+				writeServerError(w, err)
+				return
+			}
+		default:
 			if err := db.MoveTask(h.conn, id, req.Status); err != nil {
 				writeServerError(w, err)
 				return
 			}
+		}
+	}
+
+	// Allow editing the note without re-closing (the done/cancelled paths above
+	// already set it when a status change accompanies the note).
+	if req.CompletionNote != nil && req.Status != "done" && req.Status != "cancelled" {
+		if err := db.UpdateTaskField(h.conn, id, "completion_note", *req.CompletionNote); err != nil {
+			writeServerError(w, err)
+			return
 		}
 	}
 

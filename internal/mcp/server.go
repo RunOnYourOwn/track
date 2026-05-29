@@ -222,6 +222,8 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleTaskMove(conn, args)
 	case "track_task_done":
 		return handleTaskDone(conn, args)
+	case "track_task_cancel":
+		return handleTaskCancel(conn, args)
 	case "track_task_next":
 		return handleTaskNext(conn, args)
 	case "track_task_link":
@@ -514,10 +516,25 @@ func handleTaskDone(conn *sql.DB, args map[string]any) (*ToolCallResult, error) 
 		return nil, err
 	}
 	actualHours := floatArg(args, "actual_hours")
-	if err := db.CompleteTask(conn, taskID, actualHours); err != nil {
+	if err := db.CompleteTask(conn, taskID, actualHours, strArg(args, "note")); err != nil {
 		return nil, err
 	}
 	return textResult(fmt.Sprintf("completed %s", idStr)), nil
+}
+
+func handleTaskCancel(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	idStr := strArg(args, "id")
+	if idStr == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	taskID, err := resolveTaskID(conn, idStr)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.CancelTask(conn, taskID, strArg(args, "reason")); err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("cancelled %s", idStr)), nil
 }
 
 func handleTaskNext(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -1122,12 +1139,25 @@ func allTools() []Tool {
 		},
 		{
 			Name:        "track_task_done",
-			Description: "Mark a task as done (optionally record actual hours)",
+			Description: "Mark a task as done (optionally record actual hours + a completion note)",
 			InputSchema: InputSchema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
 					"id":           {Type: "string", Description: "Task ID: PREFIX-NNN or ULID"},
 					"actual_hours": {Type: "number", Description: "Actual hours spent"},
+					"note":         {Type: "string", Description: "Completion note (what shipped / outcome)"},
+				},
+				Required: []string{"id"},
+			},
+		},
+		{
+			Name:        "track_task_cancel",
+			Description: "Cancel a task (terminal, not completed) with an optional reason",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id":     {Type: "string", Description: "Task ID: PREFIX-NNN or ULID"},
+					"reason": {Type: "string", Description: "Why it's cancelled (stored in completion_note)"},
 				},
 				Required: []string{"id"},
 			},
