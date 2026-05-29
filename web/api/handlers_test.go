@@ -202,6 +202,61 @@ func TestCreateProjectPrefixValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+// Decisions and learnings can be edited over HTTP.
+func TestUpdateDecisionAndLearningHTTP(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"EDK","name":"E"}`).Body.Close()
+
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/EDK/decisions", `{"title":"old title","context":"c"}`)
+	var dec struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&dec)
+	resp.Body.Close()
+	resp = doJSON(t, "PATCH", srv.URL+"/api/decisions/"+dec.ID, `{"title":"new title"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update decision: got %d, want 200", resp.StatusCode)
+	}
+	var ud struct {
+		Title string `json:"title"`
+	}
+	json.NewDecoder(resp.Body).Decode(&ud)
+	resp.Body.Close()
+	if ud.Title != "new title" {
+		t.Fatalf("decision title not updated: %q", ud.Title)
+	}
+	resp = doJSON(t, "PATCH", srv.URL+"/api/decisions/NOPE", `{"title":"x"}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("update missing decision: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp = doJSON(t, "POST", srv.URL+"/api/projects/EDK/learnings", `{"title":"L","body":"b","category":"pattern"}`)
+	var lrn struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&lrn)
+	resp.Body.Close()
+	resp = doJSON(t, "PATCH", srv.URL+"/api/learnings/"+lrn.ID, `{"body":"new body","category":"pitfall"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("update learning: got %d, want 200", resp.StatusCode)
+	}
+	var ul struct {
+		Body     string `json:"body"`
+		Category string `json:"category"`
+	}
+	json.NewDecoder(resp.Body).Decode(&ul)
+	resp.Body.Close()
+	if ul.Body != "new body" || ul.Category != "pitfall" {
+		t.Fatalf("learning not updated: body=%q category=%q", ul.Body, ul.Category)
+	}
+	resp = doJSON(t, "PATCH", srv.URL+"/api/learnings/NOPE", `{"title":"x"}`)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("update missing learning: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
 // Knowledge can be created and resolved over HTTP (was CLI/MCP-only).
 func TestKnowledgeCreateAndResolveHTTP(t *testing.T) {
 	srv, _ := newTestServer(t)

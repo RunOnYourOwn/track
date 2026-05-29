@@ -262,8 +262,12 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleBlockerResolve(conn, args)
 	case "track_decision_list":
 		return handleDecisionList(conn, args)
+	case "track_decision_update":
+		return handleDecisionUpdate(conn, args)
 	case "track_learn_list":
 		return handleLearnList(conn, args)
+	case "track_learn_update":
+		return handleLearnUpdate(conn, args)
 	case "track_sprint_create":
 		return handleSprintCreate(conn, args)
 	case "track_sprint_list":
@@ -1146,6 +1150,50 @@ func handleLearnList(conn *sql.DB, args map[string]any) (*ToolCallResult, error)
 	return jsonResult(all), nil
 }
 
+func handleDecisionUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	id := strArg(args, "id")
+	if id == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	if _, err := db.GetDecision(conn, id); err != nil {
+		return nil, fmt.Errorf("decision %q not found", id)
+	}
+	for _, field := range []string{"title", "context", "options", "revisit_by", "decided_by"} {
+		if v := strArg(args, field); v != "" {
+			if err := db.UpdateDecisionField(conn, id, field, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+	d, err := db.GetDecision(conn, id)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(d), nil
+}
+
+func handleLearnUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	id := strArg(args, "id")
+	if id == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	if _, err := db.GetLearning(conn, id); err != nil {
+		return nil, fmt.Errorf("learning %q not found", id)
+	}
+	for _, field := range []string{"title", "body", "category", "applies_to"} {
+		if v := strArg(args, field); v != "" {
+			if err := db.UpdateLearningField(conn, id, field, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+	l, err := db.GetLearning(conn, id)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(l), nil
+}
+
 // --- sprint tools (parity with the CLI sprint subcommands) ---
 
 func handleSprintCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -1598,6 +1646,22 @@ func allTools() []Tool {
 			},
 		},
 		{
+			Name:        "track_decision_update",
+			Description: "Edit a decision; only the fields you pass change. (Use track_decision_resolve to set the decision/rationale.)",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id":         {Type: "string", Description: "Decision id (required)"},
+					"title":      {Type: "string", Description: "New title"},
+					"context":    {Type: "string", Description: "New context"},
+					"options":    {Type: "string", Description: "New options (JSON array or text)"},
+					"revisit_by": {Type: "string", Description: "New revisit date YYYY-MM-DD"},
+					"decided_by": {Type: "string", Description: "Who decides"},
+				},
+				Required: []string{"id"},
+			},
+		},
+		{
 			Name:        "track_learn_list",
 			Description: "List learnings, optionally filtered by project or category",
 			InputSchema: InputSchema{
@@ -1606,6 +1670,21 @@ func allTools() []Tool {
 					"project":  {Type: "string", Description: "Project prefix (omit for all projects)"},
 					"category": {Type: "string", Description: "Filter by category"},
 				},
+			},
+		},
+		{
+			Name:        "track_learn_update",
+			Description: "Edit a learning; only the fields you pass change.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id":         {Type: "string", Description: "Learning id (required)"},
+					"title":      {Type: "string", Description: "New title"},
+					"body":       {Type: "string", Description: "New body"},
+					"category":   {Type: "string", Description: "New category"},
+					"applies_to": {Type: "string", Description: "Comma-separated project prefixes"},
+				},
+				Required: []string{"id"},
 			},
 		},
 		{

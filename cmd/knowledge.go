@@ -17,6 +17,14 @@ func init() {
 	decisionCmd.AddCommand(decisionCreateCmd)
 	decisionCmd.AddCommand(decisionListCmd)
 	decisionCmd.AddCommand(decisionResolveCmd)
+	decisionCmd.AddCommand(decisionEditCmd)
+
+	// decision edit flags (only passed flags change)
+	decisionEditCmd.Flags().String("title", "", "New title")
+	decisionEditCmd.Flags().String("context", "", "New context")
+	decisionEditCmd.Flags().String("options", "", "New options (JSON array or text)")
+	decisionEditCmd.Flags().String("revisit-by", "", "New revisit date (YYYY-MM-DD)")
+	decisionEditCmd.Flags().String("decided-by", "", "Who decides")
 
 	// decision create flags
 	decisionCreateCmd.Flags().String("project", "", "Project prefix (required)")
@@ -46,6 +54,13 @@ func init() {
 	learnCmd.AddCommand(learnCreateCmd)
 	learnCmd.AddCommand(learnSearchCmd)
 	learnCmd.AddCommand(learnListCmd)
+	learnCmd.AddCommand(learnEditCmd)
+
+	// learn edit flags (only passed flags change)
+	learnEditCmd.Flags().String("title", "", "New title")
+	learnEditCmd.Flags().String("body", "", "New body")
+	learnEditCmd.Flags().String("category", "", "New category: pattern, pitfall, tool, process, other")
+	learnEditCmd.Flags().String("applies-to", "", "Comma-separated project prefixes")
 
 	// learn create flags (the command itself acts as "learn create" via learnCreateCmd,
 	// but we also keep a top-level `track learn` that just prints help)
@@ -374,4 +389,69 @@ func resolveDecisionID(raw string) (string, error) {
 		return "", fmt.Errorf("decision %q not found", raw)
 	}
 	return id, nil
+}
+
+// resolveLearningID accepts either a full ULID or a prefix match against stored learnings.
+func resolveLearningID(raw string) (string, error) {
+	if len(raw) == 26 {
+		return raw, nil
+	}
+	conn, err := db.Open()
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = conn.QueryRow(`SELECT id FROM learnings WHERE id LIKE ? LIMIT 1`, raw+"%").Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("learning %q not found", raw)
+	}
+	return id, nil
+}
+
+var decisionEditCmd = &cobra.Command{
+	Use:   "edit <id>",
+	Short: "Edit a decision (only the flags you pass change)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		conn := mustOpen()
+		id, err := resolveDecisionID(args[0])
+		if err != nil {
+			return err
+		}
+		for _, fc := range [][2]string{{"title", "title"}, {"context", "context"}, {"options", "options"}, {"revisit-by", "revisit_by"}, {"decided-by", "decided_by"}} {
+			if !cmd.Flags().Changed(fc[0]) {
+				continue
+			}
+			v, _ := cmd.Flags().GetString(fc[0])
+			if err := db.UpdateDecisionField(conn, id, fc[1], v); err != nil {
+				return err
+			}
+		}
+		fmt.Printf("Updated decision %s\n", id[:8])
+		return nil
+	},
+}
+
+var learnEditCmd = &cobra.Command{
+	Use:   "edit <id>",
+	Short: "Edit a learning (only the flags you pass change)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		conn := mustOpen()
+		id, err := resolveLearningID(args[0])
+		if err != nil {
+			return err
+		}
+		for _, fc := range [][2]string{{"title", "title"}, {"body", "body"}, {"category", "category"}, {"applies-to", "applies_to"}} {
+			if !cmd.Flags().Changed(fc[0]) {
+				continue
+			}
+			v, _ := cmd.Flags().GetString(fc[0])
+			if err := db.UpdateLearningField(conn, id, fc[1], v); err != nil {
+				return err
+			}
+		}
+		fmt.Printf("Updated learning %s\n", id[:8])
+		return nil
+	},
 }

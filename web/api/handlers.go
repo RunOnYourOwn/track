@@ -38,6 +38,8 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	mux.HandleFunc("GET /api/projects/{prefix}/learnings", cors(h.listLearnings))
 	mux.HandleFunc("POST /api/projects/{prefix}/learnings", cors(h.createLearning))
 	mux.HandleFunc("POST /api/decisions/{id}/resolve", cors(h.resolveDecision))
+	mux.HandleFunc("PATCH /api/decisions/{id}", cors(h.updateDecision))
+	mux.HandleFunc("PATCH /api/learnings/{id}", cors(h.updateLearning))
 	mux.HandleFunc("GET /api/projects/{prefix}/blockers", cors(h.listBlockers))
 
 	// Tasks
@@ -940,6 +942,95 @@ func (h *handler) resolveDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type updateDecisionRequest struct {
+	Title     *string `json:"title"`
+	Context   *string `json:"context"`
+	Options   *string `json:"options"`
+	RevisitBy *string `json:"revisit_by"`
+	DecidedBy *string `json:"decided_by"`
+}
+
+func (h *handler) updateDecision(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req updateDecisionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	set := func(field string, v *string) bool {
+		if v == nil {
+			return true
+		}
+		if err := db.UpdateDecisionField(h.conn, id, field, *v); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "decision not found")
+			} else {
+				writeServerError(w, err)
+			}
+			return false
+		}
+		return true
+	}
+	if !set("title", req.Title) || !set("context", req.Context) || !set("options", req.Options) ||
+		!set("revisit_by", req.RevisitBy) || !set("decided_by", req.DecidedBy) {
+		return
+	}
+	updated, err := db.GetDecision(h.conn, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "decision not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+type updateLearningRequest struct {
+	Title     *string `json:"title"`
+	Body      *string `json:"body"`
+	Category  *string `json:"category"`
+	AppliesTo *string `json:"applies_to"`
+}
+
+func (h *handler) updateLearning(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req updateLearningRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	set := func(field string, v *string) bool {
+		if v == nil {
+			return true
+		}
+		if err := db.UpdateLearningField(h.conn, id, field, *v); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "learning not found")
+			} else {
+				writeServerError(w, err)
+			}
+			return false
+		}
+		return true
+	}
+	if !set("title", req.Title) || !set("body", req.Body) ||
+		!set("category", req.Category) || !set("applies_to", req.AppliesTo) {
+		return
+	}
+	updated, err := db.GetLearning(h.conn, id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "learning not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (h *handler) listBlockers(w http.ResponseWriter, r *http.Request) {
