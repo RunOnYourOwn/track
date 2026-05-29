@@ -7,6 +7,17 @@ publishes the section for each tagged version as that GitHub Release's notes.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-05-29
+
+Release tooling and documentation only — the `track` binary is unchanged from
+v0.1.0.
+
+### Added
+- Changelog-driven GitHub Release notes: the release workflow now publishes the
+  matching `CHANGELOG.md` section as the release body. (v0.1.0's notes were
+  auto-generated because the changelog landed just after that tag was cut.)
+- `/release` deploy skill documenting the bump → roll changelog → tag → publish flow.
+
 ## [0.1.0] - 2026-05-29
 
 First official release — a single Go binary (CLI + embedded web UI, SQLite, no
@@ -31,5 +42,6 @@ external services) for managing AI-assisted development.
   that cross-compiles linux + darwin (amd64/arm64) and publishes binaries +
   checksums.
 
-[Unreleased]: https://github.com/RunOnYourOwn/track/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/RunOnYourOwn/track/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/RunOnYourOwn/track/releases/tag/v0.1.1
 [0.1.0]: https://github.com/RunOnYourOwn/track/releases/tag/v0.1.0
