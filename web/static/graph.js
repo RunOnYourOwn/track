@@ -60,10 +60,34 @@ async function _reloadGraph() {
 }
 
 // Collapse/expand is pure view state over the already-loaded graph — no refetch.
+// Disclosure is one level at a time: collapsing a node also folds its descendant
+// containers, so re-expanding it reveals just the next level (those children,
+// themselves collapsed) rather than the whole subtree at once.
 function _toggleCollapse(id) {
-  if (_collapsed.has(id)) _collapsed.delete(id);
-  else _collapsed.add(id);
+  if (_collapsed.has(id)) {
+    _collapsed.delete(id);
+  } else {
+    _collapsed.add(id);
+    _descendantContainers(id).forEach(cid => _collapsed.add(cid));
+  }
   _drawGraph();
+}
+
+// Container ids (nodes that have children) strictly below rootId, from the full
+// task list — used to pre-fold deeper levels when a node is collapsed.
+function _descendantContainers(rootId) {
+  const kids = {};
+  _allTasks.forEach(t => {
+    if (t.parent_id) (kids[t.parent_id] = kids[t.parent_id] || []).push(t.id);
+  });
+  const out = [];
+  (function walk(id) {
+    (kids[id] || []).forEach(cid => {
+      if (kids[cid]) out.push(cid);
+      walk(cid);
+    });
+  })(rootId);
+  return out;
 }
 
 // All ids in a node's subtree (the node itself + every descendant).
@@ -118,25 +142,18 @@ function _drawGraph() {
     nodes.forEach(n => { dfsOrder.set(n.id, dfsOrder.size); walk(childrenOf[n.id] || []); });
   })(roots);
 
-  // Collapse/expand: a collapsed epic/feature folds its whole subtree away. Edges
-  // that touched a hidden node are rolled up to the nearest visible ancestor (the
-  // collapsed container) and de-duplicated, so a cross-subtree dependency still
-  // shows as a single edge between the collapsed boxes. This is a view-state
+  // Collapse/expand: a node is hidden if any ancestor is collapsed. Collapsing
+  // also pre-folds descendant containers (see _toggleCollapse) so disclosure is
+  // one level at a time. Edges that touched a hidden node are rolled up to the
+  // nearest visible ancestor and de-duplicated, so a cross-subtree dependency
+  // still shows as a single edge between the collapsed boxes. This is a view-state
   // filter over the already-fetched graph; the server-side structure is untouched.
   const parentById = new Map();
   connectedTasks.forEach(t => {
     if (t.parent_id && connectedIds.has(t.parent_id)) parentById.set(t.id, t.parent_id);
   });
   const isCollapsible = (id) => (childrenOf[id] || []).length > 0;
-  const descCount = new Map();
-  function countDesc(id) {
-    if (descCount.has(id)) return descCount.get(id);
-    let n = 0;
-    (childrenOf[id] || []).forEach(c => { n += 1 + countDesc(c.id); });
-    descCount.set(id, n);
-    return n;
-  }
-  connectedTasks.forEach(t => countDesc(t.id));
+  const childCount = (id) => (childrenOf[id] || []).length;
 
   // Filters that compose with collapse: focus narrows to one subtree; crit-only
   // keeps just the critical-path nodes (so blocks edges among them survive while
@@ -449,7 +466,7 @@ function _drawGraph() {
     // descendant count) when collapsed. Sits left of the status dot; its own click
     // toggles fold state without opening the detail panel.
     if (collapsible) {
-      const label = collapsedNow ? `+${descCount.get(t.id)}` : '−';
+      const label = collapsedNow ? `+${childCount(t.id)}` : '−';
       const pillW = Math.max(18, 10 + label.length * 7);
       const px = NODE_W - 24 - pillW;
       const tg = g.append('g').style('cursor', 'pointer').attr('data-collapse', t.id);
