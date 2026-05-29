@@ -19,7 +19,7 @@ func TestComputeHealthAllFactors(t *testing.T) {
 	if err := LogTime(d, tk.ID, "", 2.0, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := CompleteTask(d, tk.ID, 0); err != nil {
+	if err := CompleteTask(d, tk.ID, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 

@@ -3,42 +3,43 @@ package models
 import "time"
 
 type Project struct {
-	ID        string    `json:"id"`
-	Prefix    string    `json:"prefix"`
-	Name      string    `json:"name"`
-	Phase     string    `json:"phase,omitempty"`
-	PhaseType string    `json:"phase_type,omitempty"`
-	ExternalID string   `json:"external_id,omitempty"`
-	Metadata  string    `json:"metadata,omitempty"`
-	WIPLimit  int       `json:"wip_limit"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	Prefix     string    `json:"prefix"`
+	Name       string    `json:"name"`
+	Phase      string    `json:"phase,omitempty"`
+	PhaseType  string    `json:"phase_type,omitempty"`
+	ExternalID string    `json:"external_id,omitempty"`
+	Metadata   string    `json:"metadata,omitempty"`
+	WIPLimit   int       `json:"wip_limit"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type Task struct {
-	ID            string     `json:"id"`
-	ProjectID     string     `json:"project_id"`
-	Seq           int        `json:"seq"`
-	Title         string     `json:"title"`
-	Description   string     `json:"description,omitempty"`
-	Status        string     `json:"status"`
-	Priority      string     `json:"priority"`
-	EstimateSize         string  `json:"estimate_size,omitempty"`
-	EstimateHours        float64 `json:"estimate_hours,omitempty"`
-	EstimateAgentMinutes int     `json:"estimate_agent_minutes,omitempty"`
-	ActualHours          float64 `json:"actual_hours,omitempty"`
-	Type          string     `json:"type"`
-	ParentID      *string    `json:"parent_id,omitempty"`
-	SortOrder     int        `json:"sort_order"`
-	SourceType    string     `json:"source_type"`
-	AgentContext  string     `json:"agent_context,omitempty"`
-	Tags          string     `json:"tags,omitempty"`
-	StartDate     *string    `json:"start_date,omitempty"`
-	DueDate       *string    `json:"due_date,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	IsRework      bool       `json:"is_rework"`
+	ID                   string     `json:"id"`
+	ProjectID            string     `json:"project_id"`
+	Seq                  int        `json:"seq"`
+	Title                string     `json:"title"`
+	Description          string     `json:"description,omitempty"`
+	Status               string     `json:"status"`
+	Priority             string     `json:"priority"`
+	EstimateSize         string     `json:"estimate_size,omitempty"`
+	EstimateHours        float64    `json:"estimate_hours,omitempty"`
+	EstimateAgentMinutes int        `json:"estimate_agent_minutes,omitempty"`
+	ActualHours          float64    `json:"actual_hours,omitempty"`
+	Type                 string     `json:"type"`
+	ParentID             *string    `json:"parent_id,omitempty"`
+	SortOrder            int        `json:"sort_order"`
+	SourceType           string     `json:"source_type"`
+	AgentContext         string     `json:"agent_context,omitempty"`
+	Tags                 string     `json:"tags,omitempty"`
+	StartDate            *string    `json:"start_date,omitempty"`
+	DueDate              *string    `json:"due_date,omitempty"`
+	CompletionNote       *string    `json:"completion_note,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	IsRework             bool       `json:"is_rework"`
 }
 
 func (t *Task) DisplayID(prefix string) string {
@@ -86,11 +87,11 @@ type TimeEntry struct {
 }
 
 type TaskStatusHistory struct {
-	ID       string     `json:"id"`
-	TaskID   string     `json:"task_id"`
-	Status   string     `json:"status"`
-	EnteredAt time.Time `json:"entered_at"`
-	ExitedAt *time.Time `json:"exited_at,omitempty"`
+	ID        string     `json:"id"`
+	TaskID    string     `json:"task_id"`
+	Status    string     `json:"status"`
+	EnteredAt time.Time  `json:"entered_at"`
+	ExitedAt  *time.Time `json:"exited_at,omitempty"`
 }
 
 type TaskCommit struct {
@@ -142,13 +143,13 @@ type Learning struct {
 }
 
 type CrossProjectDep struct {
-	ID              string  `json:"id"`
-	SourceProjectID string  `json:"source_project_id"`
-	SourceTaskID    *string `json:"source_task_id,omitempty"`
-	TargetProjectID string  `json:"target_project_id"`
-	TargetTaskID    *string `json:"target_task_id,omitempty"`
-	DepType         string  `json:"dep_type"`
-	Notes           string  `json:"notes,omitempty"`
+	ID              string    `json:"id"`
+	SourceProjectID string    `json:"source_project_id"`
+	SourceTaskID    *string   `json:"source_task_id,omitempty"`
+	TargetProjectID string    `json:"target_project_id"`
+	TargetTaskID    *string   `json:"target_task_id,omitempty"`
+	DepType         string    `json:"dep_type"`
+	Notes           string    `json:"notes,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 }
 
@@ -166,15 +167,15 @@ type Blocker struct {
 }
 
 type Sprint struct {
-	ID        string     `json:"id"`
-	ProjectID string     `json:"project_id"`
-	Name      string     `json:"name"`
-	Goal      string     `json:"goal,omitempty"`
-	Status    string     `json:"status"`
-	StartDate *string    `json:"start_date,omitempty"`
-	EndDate   *string    `json:"end_date,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	ID        string    `json:"id"`
+	ProjectID string    `json:"project_id"`
+	Name      string    `json:"name"`
+	Goal      string    `json:"goal,omitempty"`
+	Status    string    `json:"status"`
+	StartDate *string   `json:"start_date,omitempty"`
+	EndDate   *string   `json:"end_date,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Snapshot struct {
@@ -194,15 +195,15 @@ type Snapshot struct {
 }
 
 type TaskActivity struct {
-	TaskID              string  `json:"task_id"`
-	Title               string  `json:"title"`
-	Seq                 int     `json:"seq"`
-	Completed           bool    `json:"completed"`
-	Touched             bool    `json:"touched"`
-	CycleTimeSec        *int64  `json:"cycle_time_seconds,omitempty"`
-	EstimateHours       float64 `json:"estimate_hours,omitempty"`
-	EstimateAgentMinutes int    `json:"estimate_agent_minutes,omitempty"`
-	ActualHours         float64 `json:"actual_hours,omitempty"`
+	TaskID               string  `json:"task_id"`
+	Title                string  `json:"title"`
+	Seq                  int     `json:"seq"`
+	Completed            bool    `json:"completed"`
+	Touched              bool    `json:"touched"`
+	CycleTimeSec         *int64  `json:"cycle_time_seconds,omitempty"`
+	EstimateHours        float64 `json:"estimate_hours,omitempty"`
+	EstimateAgentMinutes int     `json:"estimate_agent_minutes,omitempty"`
+	ActualHours          float64 `json:"actual_hours,omitempty"`
 }
 
 type SessionStats struct {

@@ -114,7 +114,7 @@ func TestMoveAndCompleteTask(t *testing.T) {
 		t.Errorf("expected in_progress, got %s", updated.Status)
 	}
 
-	if err := CompleteTask(db, task.ID, 2.5); err != nil {
+	if err := CompleteTask(db, task.ID, 2.5, ""); err != nil {
 		t.Fatal(err)
 	}
 	done, _ := GetTask(db, task.ID)
@@ -280,7 +280,7 @@ func TestAutoActualHours_CompleteTaskOverrides(t *testing.T) {
 	db.Exec(`UPDATE tasks SET status = 'in_progress' WHERE id = ?`, task.ID)
 
 	// CompleteTask with explicit hours should override auto-computed
-	if err := CompleteTask(db, task.ID, 5.0); err != nil {
+	if err := CompleteTask(db, task.ID, 5.0, ""); err != nil {
 		t.Fatal(err)
 	}
 

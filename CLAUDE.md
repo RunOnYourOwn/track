@@ -47,7 +47,7 @@ skills/        — Claude Code skill definitions (deployed to ~/.claude/skills/)
 ## Key Commands
 - `track serve` — start HTTP server (default :3011)
 - `track project create --prefix PREFIX --name "Name"`
-- `track task create/move/done/list/get/next/delete/link`
+- `track task create/move/done/cancel/list/get/next/delete/link` (`done --note`, `cancel --reason`)
 - `track session start/end/log`
 - `track sprint create/add/remove/start/complete/list/tasks`
 - `track report status/velocity/health/snapshot`
@@ -108,7 +108,8 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_task_create` | Create a task with title, type, priority, estimate |
 | `track_task_get` | Get full task details by ID |
 | `track_task_move` | Move task to status (todo/in_progress/blocked/done) |
-| `track_task_done` | Mark done with optional actual hours |
+| `track_task_done` | Mark done (optional actual hours + completion note) |
+| `track_task_cancel` | Cancel a task (terminal) with an optional reason |
 | `track_task_next` | Suggest highest-priority unblocked task |
 | `track_task_link` | Create dependency (from blocks to) |
 | `track_task_update` | Edit task fields (title, priority, start_date, due_date, parent, …) |

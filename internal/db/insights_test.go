@@ -20,7 +20,7 @@ func TestComputeInsights(t *testing.T) {
 	if err := LogTime(d, t1.ID, "", 2.0, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := CompleteTask(d, t1.ID, 0); err != nil {
+	if err := CompleteTask(d, t1.ID, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,7 +32,7 @@ func TestComputeInsights(t *testing.T) {
 	if err := LogTime(d, t2.ID, "", 1.0, ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := CompleteTask(d, t2.ID, 0); err != nil {
+	if err := CompleteTask(d, t2.ID, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 

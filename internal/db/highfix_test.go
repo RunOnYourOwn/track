@@ -147,6 +147,52 @@ func TestCreateProjectValidatesPrefix(t *testing.T) {
 	}
 }
 
+// completion_note is recorded on done + cancel; cancelled is a terminal status
+// that doesn't block parent auto-close.
+func TestCancelAndCompletionNote(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "CN")
+
+	t1, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "ship it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CompleteTask(d, t1.ID, 0, "shipped in v0.3"); err != nil {
+		t.Fatal(err)
+	}
+	g1, _ := GetTask(d, t1.ID)
+	if g1.Status != "done" || g1.CompletionNote == nil || *g1.CompletionNote != "shipped in v0.3" || g1.CompletedAt == nil {
+		t.Fatalf("done+note wrong: status=%s note=%v completed=%v", g1.Status, g1.CompletionNote, g1.CompletedAt)
+	}
+
+	t2, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "drop it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CancelTask(d, t2.ID, "descoped for MVP"); err != nil {
+		t.Fatal(err)
+	}
+	g2, _ := GetTask(d, t2.ID)
+	if g2.Status != "cancelled" || g2.CompletionNote == nil || *g2.CompletionNote != "descoped for MVP" || g2.CompletedAt == nil {
+		t.Fatalf("cancel+note wrong: status=%s note=%v completed=%v", g2.Status, g2.CompletionNote, g2.CompletedAt)
+	}
+
+	// A feature with one done + one cancelled child is fully closed → auto-closes.
+	feat, _ := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "feature", Type: "feature"})
+	c1, _ := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "c1", ParentID: feat.ID})
+	c2, _ := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "c2", ParentID: feat.ID})
+	if err := CompleteTask(d, c1.ID, 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := CancelTask(d, c2.ID, "won't do"); err != nil {
+		t.Fatal(err)
+	}
+	gf, _ := GetTask(d, feat.ID)
+	if gf.Status != "done" {
+		t.Fatalf("parent should auto-close when all children done/cancelled, got %q", gf.Status)
+	}
+}
+
 // H5: deleting a non-empty project cascades instead of failing the FK check.
 func TestDeleteProjectCascades(t *testing.T) {
 	d := OpenTestDB(t)
@@ -259,7 +305,7 @@ func TestCompleteTaskPreservesLoggedHours(t *testing.T) {
 	if err := LogTime(d, tk.ID, "", 2.0, "logged"); err != nil {
 		t.Fatal(err)
 	}
-	if err := CompleteTask(d, tk.ID, 0); err != nil {
+	if err := CompleteTask(d, tk.ID, 0, ""); err != nil {
 		t.Fatal(err)
 	}
 	got, err := GetTask(d, tk.ID)

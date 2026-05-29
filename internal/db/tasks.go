@@ -245,9 +245,13 @@ func ListTasks(db *sql.DB, opts ListTaskOpts) ([]models.Task, error) {
 }
 
 var validStatuses = map[string]bool{
-	"todo": true, "in_progress": true, "blocked": true, "done": true,
+	"todo": true, "in_progress": true, "blocked": true, "done": true, "cancelled": true,
 	"waiting_review": true, "waiting_external": true, "waiting_dependency": true,
 }
+
+// terminalStatuses are the "closed" states — a task in one of these is neither
+// open/active work nor counted as completed throughput (cancelled) vs completed (done).
+func isTerminalStatus(s string) bool { return s == "done" || s == "cancelled" }
 
 var validPriorities = map[string]bool{
 	"urgent": true, "high": true, "medium": true, "low": true,
@@ -269,7 +273,7 @@ func MoveTask(db *sql.DB, id, status string) error {
 	if err := moveTaskNoAutoClose(db, id, status); err != nil {
 		return err
 	}
-	if status == "done" {
+	if isTerminalStatus(status) {
 		autoCloseParent(db, id)
 	}
 	return nil
@@ -296,14 +300,15 @@ func moveTaskNoAutoClose(d *sql.DB, id, status string) error {
 		return err
 	}
 
-	if status == "done" {
+	if isTerminalStatus(status) {
+		// done OR cancelled records a close timestamp in completed_at.
 		if _, err := tx.Exec(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
 			status, now, now, id); err != nil {
 			return err
 		}
 	} else {
-		// Clear completed_at on any non-done status; mark rework when a previously
-		// completed task is reopened (the only signal that feeds rework_rate).
+		// Clear completed_at on any non-terminal status; mark rework when a
+		// previously completed task is reopened (the only signal feeding rework_rate).
 		reopened := prevStatus == "done"
 		if _, err := tx.Exec(`UPDATE tasks SET status = ?, updated_at = ?, completed_at = NULL, is_rework = CASE WHEN ? THEN 1 ELSE is_rework END WHERE id = ?`,
 			status, now, reopened, id); err != nil {
@@ -378,7 +383,7 @@ func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) {
 	var pending int
 	// On a scan error, bail rather than treating pending as 0 — otherwise a
 	// transient DB error would auto-close a parent that still has open children.
-	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status != 'done'`, parentID.String).Scan(&pending); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status NOT IN ('done','cancelled')`, parentID.String).Scan(&pending); err != nil {
 		return
 	}
 	if pending > 0 {
@@ -390,14 +395,30 @@ func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) {
 	autoCloseParentWalk(db, parentID.String, visited)
 }
 
-func CompleteTask(db *sql.DB, id string, actualHours float64) error {
+func CompleteTask(db *sql.DB, id string, actualHours float64, note string) error {
 	if err := MoveTask(db, id, "done"); err != nil {
 		return err
 	}
 	if actualHours > 0 {
 		now := Now()
-		_, err := db.Exec(`UPDATE tasks SET actual_hours = ?, updated_at = ? WHERE id = ?`, actualHours, now, id)
+		if _, err := db.Exec(`UPDATE tasks SET actual_hours = ?, updated_at = ? WHERE id = ?`, actualHours, now, id); err != nil {
+			return err
+		}
+	}
+	if note != "" {
+		return UpdateTaskField(db, id, "completion_note", note)
+	}
+	return nil
+}
+
+// CancelTask marks a task terminally cancelled (not completed), recording an
+// optional reason in completion_note. completed_at is set as the close timestamp.
+func CancelTask(db *sql.DB, id, note string) error {
+	if err := MoveTask(db, id, "cancelled"); err != nil {
 		return err
+	}
+	if note != "" {
+		return UpdateTaskField(db, id, "completion_note", note)
 	}
 	return nil
 }
@@ -442,7 +463,7 @@ var allowedTaskFields = map[string]bool{
 	"title": true, "description": true, "type": true, "priority": true,
 	"agent_context": true, "due_date": true, "start_date": true, "sort_order": true,
 	"estimate_size": true, "estimate_hours": true, "estimate_agent_minutes": true,
-	"actual_hours": true, "tags": true,
+	"actual_hours": true, "tags": true, "completion_note": true,
 }
 
 func UpdateTaskField(d *sql.DB, id, field, value string) error {
@@ -532,7 +553,7 @@ func GetActiveBlockers(db *sql.DB, taskID string) ([]models.Dependency, error) {
 		SELECT d.from_task_id, d.to_task_id, d.dep_type, d.reason
 		FROM dependencies d
 		JOIN tasks t ON d.from_task_id = t.id
-		WHERE d.to_task_id = ? AND d.dep_type = 'blocks' AND t.status != 'done'`, taskID)
+		WHERE d.to_task_id = ? AND d.dep_type = 'blocks' AND t.status NOT IN ('done','cancelled')`, taskID)
 	if err != nil {
 		return nil, err
 	}
@@ -557,7 +578,7 @@ func SuggestNext(db *sql.DB, projectID string) (*models.Task, error) {
 		AND NOT EXISTS (
 			SELECT 1 FROM dependencies d
 			JOIN tasks bt ON d.from_task_id = bt.id
-			WHERE d.to_task_id = t.id AND d.dep_type = 'blocks' AND bt.status != 'done'
+			WHERE d.to_task_id = t.id AND d.dep_type = 'blocks' AND bt.status NOT IN ('done','cancelled')
 		)
 		ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, t.sort_order, t.seq
 		LIMIT 1`, projectID)
@@ -572,17 +593,17 @@ func SuggestNext(db *sql.DB, projectID string) (*models.Task, error) {
 	return GetTask(db, id)
 }
 
-const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.start_date, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework FROM tasks t JOIN projects p ON t.project_id = p.id`
+const taskSelect = `SELECT t.id, t.project_id, t.seq, t.title, t.description, t.status, t.priority, t.type, t.estimate_size, t.estimate_hours, t.estimate_agent_minutes, t.actual_hours, t.parent_id, t.sort_order, t.source_type, t.agent_context, t.tags, t.start_date, t.due_date, t.created_at, t.updated_at, t.completed_at, t.is_rework, t.completion_note FROM tasks t JOIN projects p ON t.project_id = p.id`
 
 func scanTask(row *sql.Row) (*models.Task, error) {
 	var t models.Task
-	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags, completionNote sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := row.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework, &completionNote)
 	if err != nil {
 		return nil, err
 	}
@@ -603,6 +624,9 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String
+	}
+	if completionNote.Valid {
+		t.CompletionNote = &completionNote.String
 	}
 	t.CreatedAt, _ = parseTime(createdAt)
 	t.UpdatedAt, _ = parseTime(updatedAt)
@@ -616,13 +640,13 @@ func scanTask(row *sql.Row) (*models.Task, error) {
 
 func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	var t models.Task
-	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags sql.NullString
+	var parentID, startDate, dueDate, completedAt, estimateSize, description, sourceType, agentContext, tags, completionNote sql.NullString
 	var estimateHours, actualHours sql.NullFloat64
 	var estimateAgentMinutes sql.NullInt64
 	var createdAt, updatedAt string
 	var isRework int
 
-	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework)
+	err := rows.Scan(&t.ID, &t.ProjectID, &t.Seq, &t.Title, &description, &t.Status, &t.Priority, &t.Type, &estimateSize, &estimateHours, &estimateAgentMinutes, &actualHours, &parentID, &t.SortOrder, &sourceType, &agentContext, &tags, &startDate, &dueDate, &createdAt, &updatedAt, &completedAt, &isRework, &completionNote)
 	if err != nil {
 		return nil, err
 	}
@@ -643,6 +667,9 @@ func scanTaskRows(rows *sql.Rows) (*models.Task, error) {
 	}
 	if dueDate.Valid {
 		t.DueDate = &dueDate.String
+	}
+	if completionNote.Valid {
+		t.CompletionNote = &completionNote.String
 	}
 	t.CreatedAt, _ = parseTime(createdAt)
 	t.UpdatedAt, _ = parseTime(updatedAt)
