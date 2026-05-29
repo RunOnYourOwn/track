@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -224,14 +223,6 @@ var statusCmd = &cobra.Command{
 // track velocity
 // ---------------------------------------------------------------------------
 
-type weekBucket struct {
-	Label    string  `json:"week"`
-	Done     int     `json:"done"`
-	EstHours float64 `json:"est_hours"`
-	ActHours float64 `json:"act_hours"`
-	Accuracy float64 `json:"accuracy_pct"`
-}
-
 var velocityCmd = &cobra.Command{
 	Use:   "velocity",
 	Short: "Throughput and estimation accuracy over N weeks",
@@ -248,62 +239,9 @@ var velocityCmd = &cobra.Command{
 			return fmt.Errorf("project %q not found", projectPrefix)
 		}
 
-		cutoff := time.Now().AddDate(0, 0, -weeks*7)
-
-		// Query done tasks completed within the window
-		rows, err := conn.Query(`
-			SELECT seq, title, estimate_hours, actual_hours, completed_at
-			FROM tasks
-			WHERE project_id = ? AND status = 'done' AND completed_at IS NOT NULL
-			ORDER BY completed_at ASC`, proj.ID)
+		result, err := db.ComputeVelocity(conn, proj.ID, weeks)
 		if err != nil {
 			return err
-		}
-		defer rows.Close()
-
-		buckets := map[string]*weekBucket{}
-		var bucketOrder []string
-
-		for rows.Next() {
-			var seq int
-			var title, completedAtStr string
-			var estH, actH float64
-			if err := rows.Scan(&seq, &title, &estH, &actH, &completedAtStr); err != nil {
-				continue
-			}
-			completedAt, err := time.Parse(time.RFC3339, completedAtStr)
-			if err != nil {
-				continue
-			}
-			if completedAt.Before(cutoff) {
-				continue
-			}
-			year, week := completedAt.ISOWeek()
-			label := fmt.Sprintf("%d-W%02d", year, week)
-			if _, exists := buckets[label]; !exists {
-				buckets[label] = &weekBucket{Label: label}
-				bucketOrder = append(bucketOrder, label)
-			}
-			b := buckets[label]
-			b.Done++
-			b.EstHours += estH
-			b.ActHours += actH
-		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-
-		// Compute accuracy per bucket
-		for _, b := range buckets {
-			if b.EstHours > 0 && b.ActHours > 0 {
-				b.Accuracy = math.Min(b.EstHours, b.ActHours) / math.Max(b.EstHours, b.ActHours) * 100
-			}
-		}
-
-		// Build ordered slice
-		var result []weekBucket
-		for _, label := range bucketOrder {
-			result = append(result, *buckets[label])
 		}
 
 		if jsonOutput {
@@ -468,71 +406,9 @@ var snapshotCmd = &cobra.Command{
 			return fmt.Errorf("project %q not found", projectPrefix)
 		}
 
-		tasks, err := db.ListTasks(conn, db.ListTaskOpts{ProjectID: proj.ID})
+		snap, err := db.RecordSnapshot(conn, proj)
 		if err != nil {
 			return err
-		}
-
-		var total, done, inProgress, todo, blocked, rework int
-		var hoursDone, hoursRemaining float64
-
-		for _, t := range tasks {
-			total++
-			if t.IsRework {
-				rework++
-			}
-			switch t.Status {
-			case "done":
-				done++
-				hoursDone += t.ActualHours
-			case "in_progress":
-				inProgress++
-				hoursRemaining += t.EstimateHours
-			case "todo":
-				todo++
-				hoursRemaining += t.EstimateHours
-			case "blocked":
-				blocked++
-				hoursRemaining += t.EstimateHours
-			}
-		}
-
-		score, _ := db.ComputeHealth(proj, tasks, proj.Prefix)
-		healthScore := float64(score)
-
-		flowEfficiency, err := db.ComputeFlowEfficiency(conn, proj.ID)
-		if err != nil {
-			return fmt.Errorf("compute flow efficiency: %w", err)
-		}
-		var reworkRate float64
-		if total > 0 {
-			reworkRate = float64(rework) / float64(total)
-		}
-
-		snap := models.Snapshot{
-			ID:             db.NewID(),
-			ProjectID:      proj.ID,
-			TakenAt:        time.Now().UTC(),
-			Total:          total,
-			Done:           done,
-			InProgress:     inProgress,
-			Todo:           todo,
-			Blocked:        blocked,
-			HoursDone:      hoursDone,
-			HoursRemaining: hoursRemaining,
-			FlowEfficiency: flowEfficiency,
-			ReworkRate:     reworkRate,
-			HealthScore:    healthScore,
-		}
-
-		_, err = conn.Exec(`INSERT INTO snapshots (id, project_id, taken_at, total, done, in_progress, todo, blocked, hours_done, hours_remaining, flow_efficiency, rework_rate, health_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			snap.ID, snap.ProjectID, snap.TakenAt.Format(time.RFC3339),
-			snap.Total, snap.Done, snap.InProgress, snap.Todo, snap.Blocked,
-			snap.HoursDone, snap.HoursRemaining,
-			snap.FlowEfficiency, snap.ReworkRate, snap.HealthScore,
-		)
-		if err != nil {
-			return fmt.Errorf("insert snapshot: %w", err)
 		}
 
 		if jsonOutput {
@@ -540,7 +416,7 @@ var snapshotCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Snapshot recorded: %d total, %d done, %d wip, %d todo, %d blocked (health: %d)\n",
-			snap.Total, snap.Done, snap.InProgress, snap.Todo, snap.Blocked, score)
+			snap.Total, snap.Done, snap.InProgress, snap.Todo, snap.Blocked, int(snap.HealthScore))
 		return nil
 	},
 }
