@@ -52,6 +52,12 @@ Each skill is a folder containing `SKILL.md` (the prompt) and optionally helper 
 | `weekly-report` | `/weekly-report` | End-of-week summary for stakeholder visibility. |
 | `deep-audit` | `/deep-audit` | Multi-phase whole-codebase audit with verification. |
 
+### Releasing
+
+| Skill | Invoke | Purpose |
+|-------|--------|---------|
+| `release` | `/release` | Cut a versioned release: roll CHANGELOG, tag, CI cross-compiles and publishes binaries. |
+
 ## Workflow Scenarios
 
 ### 1. New Project (one-time)
@@ -93,13 +99,14 @@ Each skill is a folder containing `SKILL.md` (the prompt) and optionally helper 
 /decompose PROJ-12      # When next feature is ready to build
 /timeline               # When stakeholders ask "when?"
 /deep-audit             # Before milestones or releases
+/release                # Cut + publish a versioned release
 /project-status         # For standups or check-ins
 ```
 
 ## Requirements
 
 - Track CLI installed and on PATH
-- A project created (`track project create PROJ "Project Name"`)
+- A project created (`track project create --prefix PROJ --name "Project Name"`)
 - `docs/session-notes/current.md` for session state (created by session-end)
 - CLAUDE.md with a `## Taskboard` section naming the project prefix
 

@@ -18,16 +18,19 @@ A CLI project management tool built for AI-assisted development workflows. Desig
 ### 1. Install track
 
 ```bash
-go install github.com/RunOnYourOwn/track@latest
+go install github.com/RunOnYourOwn/track@latest   # or @v0.1.0 to pin a release
 ```
 
-Or build from source:
+Or grab a prebuilt binary (linux/macOS, amd64/arm64) from the
+[Releases](https://github.com/RunOnYourOwn/track/releases) page, or build from source:
 
 ```bash
 git clone https://github.com/RunOnYourOwn/track.git
 cd track
-go build -o track .
+make install   # builds + installs ./track to ~/bin (plain `go build -o track .` also works)
 ```
+
+Check the build with `track --version`; see [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ### 2. Install the skills
 
