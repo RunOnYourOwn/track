@@ -64,6 +64,7 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	// Dashboard + insights
 	mux.HandleFunc("GET /api/dashboard", cors(h.dashboard))
 	mux.HandleFunc("GET /api/insights", cors(h.insights))
+	mux.HandleFunc("GET /api/meta", cors(h.meta))
 	mux.HandleFunc("GET /api/projects/{prefix}/graph", cors(h.projectGraph))
 
 	// Handle OPTIONS preflight for all /api/ paths.
@@ -1145,6 +1146,16 @@ func (h *handler) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// meta serves the canonical domain vocabulary (statuses in display order +
+// priorities highest-first) so the web UI consumes it instead of hard-coding its
+// own copy. Source of truth: db.OrderedStatuses / db.OrderedPriorities.
+func (h *handler) meta(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"statuses":   db.OrderedStatuses,
+		"priorities": db.OrderedPriorities,
+	})
 }
 
 func (h *handler) insights(w http.ResponseWriter, r *http.Request) {
