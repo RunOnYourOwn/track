@@ -20,7 +20,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: go.mod
 
       - name: Test
         run: go test ./...
@@ -61,10 +61,22 @@ jobs:
             echo "have_notes=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Publish release
+      # Two steps rather than a conditional body_path: passing body_path: '' relies
+      # on the action treating empty as unset (undocumented). When the changelog
+      # section is missing we just let GitHub auto-generate the notes.
+      - name: Publish release (changelog notes)
+        if: steps.notes.outputs.have_notes == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          body_path: ${{ steps.notes.outputs.have_notes == 'true' && 'RELEASE_NOTES.md' || '' }}
+          body_path: RELEASE_NOTES.md
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Publish release (auto notes)
+        if: steps.notes.outputs.have_notes != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
           generate_release_notes: true
           fail_on_unmatched_files: true

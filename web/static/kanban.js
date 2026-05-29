@@ -8,11 +8,14 @@
 var renderKanban = (function() {
 'use strict';
 
+// Task→column routing lives in _columnIdForStatus (isWaiting prefix-match), so
+// columns only need id + label — no per-column status list to drift from the
+// canonical set.
 const KANBAN_COLUMNS = [
-  { id: 'todo',     label: 'Backlog',    statuses: ['todo'] },
-  { id: 'in_progress', label: 'In Progress', statuses: ['in_progress'] },
-  { id: 'waiting',  label: 'Waiting',    statuses: ['waiting_external', 'waiting_decision', 'waiting_feedback'] },
-  { id: 'done',     label: 'Done',       statuses: ['done'] },
+  { id: 'todo',        label: 'Backlog' },
+  { id: 'in_progress', label: 'In Progress' },
+  { id: 'waiting',     label: 'Waiting' },
+  { id: 'done',        label: 'Done' },
 ];
 
 const COLUMN_DROP_STATUS = {

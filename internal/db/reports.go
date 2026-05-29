@@ -89,6 +89,10 @@ func RecordSnapshot(conn *sql.DB, proj *models.Project) (*models.Snapshot, error
 		return nil, err
 	}
 
+	// Burndown axes differ on purpose: hoursDone is agent actual time on completed
+	// tasks; hoursRemaining is the human estimate_hours of open work (the planned
+	// budget left). They're reported separately, never divided against each other,
+	// so the mixed axis is intentional — don't "align" them without changing intent.
 	var total, done, inProgress, todo, blocked, rework int
 	var hoursDone, hoursRemaining float64
 	for _, t := range tasks {

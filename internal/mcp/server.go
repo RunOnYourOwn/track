@@ -567,17 +567,18 @@ func handleTaskCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 	}
 
 	opts := db.CreateTaskOpts{
-		ProjectID:     projectID,
-		Title:         title,
-		Description:   strArg(args, "description"),
-		Priority:      strArg(args, "priority"),
-		Type:          strArg(args, "type"),
-		EstimateSize:  strArg(args, "estimate"),
-		EstimateHours: floatArg(args, "hours"),
-		SourceType:    strArg(args, "source"),
-		AgentContext:  strArg(args, "agent_context"),
-		StartDate:     strArg(args, "start_date"),
-		DueDate:       strArg(args, "due_date"),
+		ProjectID:            projectID,
+		Title:                title,
+		Description:          strArg(args, "description"),
+		Priority:             strArg(args, "priority"),
+		Type:                 strArg(args, "type"),
+		EstimateSize:         strArg(args, "estimate"),
+		EstimateHours:        floatArg(args, "hours"),
+		EstimateAgentMinutes: int(floatArg(args, "estimate_agent_minutes")),
+		SourceType:           strArg(args, "source"),
+		AgentContext:         strArg(args, "agent_context"),
+		StartDate:            strArg(args, "start_date"),
+		DueDate:              strArg(args, "due_date"),
 	}
 
 	if parentStr := strArg(args, "parent_id"); parentStr != "" {
@@ -769,36 +770,48 @@ func handleTaskUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 		return nil, err
 	}
 
-	fields := map[string]string{
-		"title":         strArg(args, "title"),
-		"description":   strArg(args, "description"),
-		"type":          strArg(args, "type"),
-		"priority":      strArg(args, "priority"),
-		"estimate_size": strArg(args, "estimate_size"),
-		"start_date":    strArg(args, "start_date"),
-		"due_date":      strArg(args, "due_date"),
-		"tags":          strArg(args, "tags"),
-	}
-
-	if v := floatArg(args, "estimate_hours"); v > 0 {
-		fields["estimate_hours"] = strconv.FormatFloat(v, 'f', -1, 64)
-	}
-	if v := int(floatArg(args, "estimate_agent_minutes")); v > 0 {
-		fields["estimate_agent_minutes"] = strconv.Itoa(v)
-	}
-	if v := int(floatArg(args, "sort_order")); v > 0 {
-		fields["sort_order"] = strconv.Itoa(v)
-	}
-
 	updated := 0
-	for field, value := range fields {
-		if value == "" {
-			continue
-		}
+	setField := func(field, value string) error {
 		if err := db.UpdateTaskField(conn, taskID, field, value); err != nil {
-			return nil, fmt.Errorf("updating %s: %w", field, err)
+			return fmt.Errorf("updating %s: %w", field, err)
 		}
 		updated++
+		return nil
+	}
+
+	// Enum / required fields: apply only when a non-empty value is given — an empty
+	// value is invalid (nothing to clear to). Mirrors the HTTP plain-string set.
+	for _, f := range []string{"title", "type", "priority", "tags"} {
+		if v := strArg(args, f); v != "" {
+			if err := setField(f, v); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Clearable fields: apply whenever the caller provides the key (even ""/0) so a
+	// value can be cleared/zeroed — presence detection mirrors the HTTP pointer set.
+	for _, f := range []string{"description", "estimate_size", "start_date", "due_date"} {
+		if _, ok := args[f]; ok {
+			if err := setField(f, strArg(args, f)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if _, ok := args["estimate_hours"]; ok {
+		if err := setField("estimate_hours", strconv.FormatFloat(floatArg(args, "estimate_hours"), 'f', -1, 64)); err != nil {
+			return nil, err
+		}
+	}
+	if _, ok := args["estimate_agent_minutes"]; ok {
+		if err := setField("estimate_agent_minutes", strconv.Itoa(int(floatArg(args, "estimate_agent_minutes")))); err != nil {
+			return nil, err
+		}
+	}
+	if _, ok := args["sort_order"]; ok {
+		if err := setField("sort_order", strconv.Itoa(int(floatArg(args, "sort_order")))); err != nil {
+			return nil, err
+		}
 	}
 
 	if parentStr := strArg(args, "parent_id"); parentStr != "" {
@@ -1431,7 +1444,7 @@ func allTools() []Tool {
 				Type: "object",
 				Properties: map[string]PropertySchema{
 					"project":  {Type: "string", Description: "Project prefix (e.g. PROJ)"},
-					"status":   {Type: "string", Description: "Comma-separated statuses: todo,in_progress,blocked,done"},
+					"status":   {Type: "string", Description: "Comma-separated statuses: todo,in_progress,blocked,waiting_review,waiting_external,waiting_dependency,done,cancelled"},
 					"priority": {Type: "string", Description: "Comma-separated priorities: urgent,high,medium,low"},
 				},
 			},
@@ -1442,18 +1455,19 @@ func allTools() []Tool {
 			InputSchema: InputSchema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
-					"project":       {Type: "string", Description: "Project prefix (required)"},
-					"title":         {Type: "string", Description: "Task title (required)"},
-					"type":          {Type: "string", Description: "epic | feature | task (default: task)"},
-					"priority":      {Type: "string", Description: "urgent | high | medium | low"},
-					"estimate":      {Type: "string", Description: "T-shirt size: XS | S | M | L | XL"},
-					"hours":         {Type: "number", Description: "Estimated hours"},
-					"description":   {Type: "string", Description: "Task description"},
-					"source":        {Type: "string", Description: "planned | discovered | stakeholder | bug | debt"},
-					"agent_context": {Type: "string", Description: "Agent context JSON"},
-					"parent_id":     {Type: "string", Description: "Parent task ID (PREFIX-NNN or ULID)"},
-					"start_date":    {Type: "string", Description: "Start date YYYY-MM-DD"},
-					"due_date":      {Type: "string", Description: "Due date YYYY-MM-DD"},
+					"project":                {Type: "string", Description: "Project prefix (required)"},
+					"title":                  {Type: "string", Description: "Task title (required)"},
+					"type":                   {Type: "string", Description: "epic | feature | task (default: task)"},
+					"priority":               {Type: "string", Description: "urgent | high | medium | low"},
+					"estimate":               {Type: "string", Description: "T-shirt size: XS | S | M | L | XL"},
+					"hours":                  {Type: "number", Description: "Estimated hours (human)"},
+					"estimate_agent_minutes": {Type: "number", Description: "Estimated agent minutes (drives accuracy + rollup)"},
+					"description":            {Type: "string", Description: "Task description"},
+					"source":                 {Type: "string", Description: "planned | discovered | stakeholder | bug | debt"},
+					"agent_context":          {Type: "string", Description: "Agent context JSON"},
+					"parent_id":              {Type: "string", Description: "Parent task ID (PREFIX-NNN or ULID)"},
+					"start_date":             {Type: "string", Description: "Start date YYYY-MM-DD"},
+					"due_date":               {Type: "string", Description: "Due date YYYY-MM-DD"},
 				},
 				Required: []string{"project", "title"},
 			},
@@ -1476,7 +1490,7 @@ func allTools() []Tool {
 				Type: "object",
 				Properties: map[string]PropertySchema{
 					"id":     {Type: "string", Description: "Task ID: PREFIX-NNN or ULID"},
-					"status": {Type: "string", Description: "todo | in_progress | blocked | done"},
+					"status": {Type: "string", Description: "todo | in_progress | blocked | waiting_review | waiting_external | waiting_dependency | done | cancelled"},
 				},
 				Required: []string{"id", "status"},
 			},

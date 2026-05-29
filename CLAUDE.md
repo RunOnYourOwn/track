@@ -8,7 +8,7 @@ CLI + web UI for local project management. Single Go binary, SQLite database, no
 - Database: SQLite (stored at ~/.track/track.db)
 - Web UI: vanilla JS + CSS (no build step), served from embedded filesystem
 - Test: `go test ./...`
-- Build: `make build` → `./track` at the repo root. `make check` = vet + test + build;
+- Build: `make build` → `./track` at the repo root. `make check` = fmt + vet + test + build;
   `make install` runs `go install` into `~/bin` (via `GOBIN`; not `cp`, which on
   Apple Silicon macOS breaks the binary's ad-hoc signature). (No `bin/` dir and no
   `make release` target.)
@@ -120,7 +120,7 @@ The MCP server (`track mcp`) exposes these tools over stdio JSON-RPC:
 | `track_task_list` | List tasks (filter by project/status/priority) |
 | `track_task_create` | Create a task with title, type, priority, estimate |
 | `track_task_get` | Get full task details by ID |
-| `track_task_move` | Move task to status (todo/in_progress/blocked/done) |
+| `track_task_move` | Move task to a status (todo/in_progress/blocked/waiting_review/waiting_external/waiting_dependency/done/cancelled) |
 | `track_task_done` | Mark done (optional actual hours + completion note) |
 | `track_task_cancel` | Cancel a task (terminal) with an optional reason |
 | `track_task_next` | Suggest highest-priority unblocked task |

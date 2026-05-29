@@ -313,6 +313,45 @@ func TestTaskUnlinkViaTool(t *testing.T) {
 	}
 }
 
+func TestTaskCreateAgentMinutesAndUpdateClearsViaTool(t *testing.T) {
+	conn := db.OpenTestDB(t)
+	if _, err := db.CreateProject(conn, "UPD", "U", "", "", "", "", 3); err != nil {
+		t.Fatal(err)
+	}
+	// create honors estimate_agent_minutes (was dropped before)
+	if _, err := handleTaskCreate(conn, map[string]any{
+		"project": "UPD", "title": "t", "description": "initial",
+		"estimate_agent_minutes": float64(45),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := resolveTaskID(conn, "UPD-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.GetTask(conn, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EstimateAgentMinutes != 45 {
+		t.Fatalf("create dropped estimate_agent_minutes: got %d want 45", got.EstimateAgentMinutes)
+	}
+
+	// update can CLEAR a string field (key present, empty value) and ZERO a numeric
+	if _, err := handleTaskUpdate(conn, map[string]any{
+		"id": "UPD-1", "description": "", "estimate_agent_minutes": float64(0),
+	}); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, _ = db.GetTask(conn, id)
+	if got.Description != "" {
+		t.Fatalf("description not cleared via MCP update: got %q", got.Description)
+	}
+	if got.EstimateAgentMinutes != 0 {
+		t.Fatalf("estimate_agent_minutes not zeroed via MCP update: got %d", got.EstimateAgentMinutes)
+	}
+}
+
 func TestResolveTaskID(t *testing.T) {
 	conn := db.OpenTestDB(t)
 	if _, err := db.CreateProject(conn, "RID", "R", "", "", "", "", 3); err != nil {
