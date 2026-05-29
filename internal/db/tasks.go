@@ -188,6 +188,25 @@ type ListTaskOpts struct {
 	ParentID  string
 }
 
+// priorityRank orders tasks urgent→high→medium→low; reused by several sort modes.
+const priorityRank = "CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END"
+
+// taskOrderBy maps a project's task_sort mode to its SQL ORDER BY clause — the one
+// server-side source of truth for task ordering (the UI just renders the result).
+// An unknown mode falls back to the priority default.
+func taskOrderBy(mode string) string {
+	switch mode {
+	case "manual":
+		return "t.sort_order, " + priorityRank + ", t.seq"
+	case "created":
+		return "t.seq"
+	case "due":
+		return "CASE WHEN t.due_date IS NULL OR t.due_date = '' THEN 1 ELSE 0 END, t.due_date, " + priorityRank + ", t.seq"
+	default: // "priority"
+		return priorityRank + ", t.sort_order, t.seq"
+	}
+}
+
 func ListTasks(db *sql.DB, opts ListTaskOpts) ([]models.Task, error) {
 	query := taskSelect
 	var args []any
@@ -225,7 +244,14 @@ func ListTasks(db *sql.DB, opts ListTaskOpts) ([]models.Task, error) {
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 END, t.sort_order, t.seq"
+	// Order by the project's configured sort mode. Only applies when scoped to a
+	// single project (a mixed-project list has no single mode, so it falls back to
+	// the priority default).
+	sortMode := "priority"
+	if opts.ProjectID != "" {
+		_ = db.QueryRow(`SELECT task_sort FROM projects WHERE id = ?`, opts.ProjectID).Scan(&sortMode)
+	}
+	query += " ORDER BY " + taskOrderBy(sortMode)
 
 	rows, err := db.Query(query, args...)
 	if err != nil {

@@ -65,6 +65,29 @@ func TestProjectsEndpoints(t *testing.T) {
 		t.Fatalf("get unknown: got %d, want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
+
+	// task_sort: invalid → 400
+	resp = doJSON(t, "PATCH", srv.URL+"/api/projects/WEB", `{"task_sort":"bogus"}`)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid task_sort: got %d, want 400", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// task_sort: valid → 200 and persisted
+	resp = doJSON(t, "PATCH", srv.URL+"/api/projects/WEB", `{"task_sort":"due"}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("valid task_sort: got %d, want 200", resp.StatusCode)
+	}
+	var updated struct {
+		TaskSort string `json:"task_sort"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	resp.Body.Close()
+	if updated.TaskSort != "due" {
+		t.Fatalf("task_sort not persisted: got %q want due", updated.TaskSort)
+	}
 }
 
 func TestTaskCreateValidationHTTP(t *testing.T) {

@@ -11,6 +11,7 @@ type Project struct {
 	ExternalID string    `json:"external_id,omitempty"`
 	Metadata   string    `json:"metadata,omitempty"`
 	WIPLimit   int       `json:"wip_limit"`
+	TaskSort   string    `json:"task_sort"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }

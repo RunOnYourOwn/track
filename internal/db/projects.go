@@ -66,17 +66,17 @@ func CreateProject(db *sql.DB, prefix, name, phase, phaseType, externalID, metad
 }
 
 func GetProjectByID(db *sql.DB, id string) (*models.Project, error) {
-	row := db.QueryRow(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, created_at, updated_at FROM projects WHERE id = ?`, id)
+	row := db.QueryRow(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, task_sort, created_at, updated_at FROM projects WHERE id = ?`, id)
 	return scanProject(row)
 }
 
 func GetProjectByPrefix(db *sql.DB, prefix string) (*models.Project, error) {
-	row := db.QueryRow(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, created_at, updated_at FROM projects WHERE prefix = ?`, strings.ToUpper(prefix))
+	row := db.QueryRow(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, task_sort, created_at, updated_at FROM projects WHERE prefix = ?`, strings.ToUpper(prefix))
 	return scanProject(row)
 }
 
 func ListProjects(db *sql.DB) ([]models.Project, error) {
-	rows, err := db.Query(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, created_at, updated_at FROM projects ORDER BY name`)
+	rows, err := db.Query(`SELECT id, prefix, name, phase, phase_type, external_id, metadata, wip_limit, task_sort, created_at, updated_at FROM projects ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,17 @@ func ListProjects(db *sql.DB) ([]models.Project, error) {
 
 var allowedProjectFields = map[string]bool{
 	"name": true, "phase": true, "phase_type": true,
-	"external_id": true, "metadata": true, "wip_limit": true,
+	"external_id": true, "metadata": true, "wip_limit": true, "task_sort": true,
+}
+
+// ValidTaskSorts are the per-project task ordering modes the board/lists honor.
+// The actual ORDER BY for each lives in taskOrderBy (internal/db/tasks.go), the
+// single server-side source of truth for sort order.
+var ValidTaskSorts = map[string]bool{
+	"priority": true, // priority, then manual order, then age (default)
+	"manual":   true, // manual drag order, then priority, then age
+	"created":  true, // creation order (oldest first)
+	"due":      true, // due date soonest first (no due last), then priority
 }
 
 func UpdateProjectField(d *sql.DB, id, field, value string) error {
@@ -158,7 +168,7 @@ type scanner interface {
 func scanProject(row scanner) (*models.Project, error) {
 	var p models.Project
 	var createdAt, updatedAt string
-	err := row.Scan(&p.ID, &p.Prefix, &p.Name, &p.Phase, &p.PhaseType, &p.ExternalID, &p.Metadata, &p.WIPLimit, &createdAt, &updatedAt)
+	err := row.Scan(&p.ID, &p.Prefix, &p.Name, &p.Phase, &p.PhaseType, &p.ExternalID, &p.Metadata, &p.WIPLimit, &p.TaskSort, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +180,7 @@ func scanProject(row scanner) (*models.Project, error) {
 func scanProjectRows(rows *sql.Rows) (*models.Project, error) {
 	var p models.Project
 	var createdAt, updatedAt string
-	err := rows.Scan(&p.ID, &p.Prefix, &p.Name, &p.Phase, &p.PhaseType, &p.ExternalID, &p.Metadata, &p.WIPLimit, &createdAt, &updatedAt)
+	err := rows.Scan(&p.ID, &p.Prefix, &p.Name, &p.Phase, &p.PhaseType, &p.ExternalID, &p.Metadata, &p.WIPLimit, &p.TaskSort, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
 	}
