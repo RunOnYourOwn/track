@@ -197,7 +197,8 @@ If the project directory is a git repo (or contains git repos), use commit dates
    - Feature descriptions matching task titles
    - Tag/release dates for milestone boundaries
 
-3. Update timestamps directly in SQLite (track has no `task edit` command):
+3. Backfill historical timestamps directly in SQLite (`track task edit` covers
+   normal fields but not `created_at`/`completed_at`):
    ```sql
    -- Completed tasks: set both created_at and completed_at
    UPDATE tasks SET 
