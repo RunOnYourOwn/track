@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/RunOnYourOwn/track/internal/db"
+	"github.com/RunOnYourOwn/track/internal/version"
 )
 
 // JSON-RPC 2.0 types
@@ -157,7 +158,7 @@ func handleRequest(conn *sql.DB, req Request) *Response {
 	case "initialize":
 		base.Result = InitializeResult{
 			ProtocolVersion: "2024-11-05",
-			ServerInfo:      ServerInfo{Name: "track", Version: "0.1.0"},
+			ServerInfo:      ServerInfo{Name: "track", Version: version.String()},
 			Capabilities:    Capabilities{Tools: &struct{}{}},
 		}
 		return &base

@@ -12,6 +12,7 @@ import (
 
 	"github.com/RunOnYourOwn/track/internal/db"
 	"github.com/RunOnYourOwn/track/internal/models"
+	"github.com/RunOnYourOwn/track/internal/version"
 )
 
 // maxBodyBytes caps request bodies to prevent memory-exhaustion via huge/deeply
@@ -1155,6 +1156,7 @@ func (h *handler) meta(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"statuses":   db.OrderedStatuses,
 		"priorities": db.OrderedPriorities,
+		"version":    version.String(),
 	})
 }
 
