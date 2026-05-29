@@ -284,8 +284,8 @@ function chartCard(title, subtitle, bodyHtml) {
   return `
     <div class="chart-card">
       <div class="chart-card-header">
-        <div class="chart-card-title">${title}</div>
-        <div class="chart-card-subtitle">${subtitle}</div>
+        <div class="chart-card-title">${escHtml(title)}</div>
+        <div class="chart-card-subtitle">${escHtml(subtitle)}</div>
       </div>
       <div class="chart-card-body">${bodyHtml}</div>
     </div>`;

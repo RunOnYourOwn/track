@@ -76,11 +76,17 @@ func Open() (*sql.DB, error) {
 }
 
 func Close() error {
+	mu.Lock()
+	defer mu.Unlock()
 	if instance == nil {
 		return nil
 	}
 	_, _ = instance.Exec("PRAGMA optimize")
-	return instance.Close()
+	err := instance.Close()
+	instance = nil
+	initDone = false
+	initErr = nil
+	return err
 }
 
 func configurePragmas(db *sql.DB) error {

@@ -26,7 +26,10 @@ func TestLoadAdoTaskIndex(t *testing.T) {
 	db.Exec(`INSERT INTO tasks (id, project_id, seq, title, status, priority, type, source_type, agent_context, created_at, updated_at) VALUES (?, ?, 4, 'Manual Task', 'todo', 'medium', 'task', '', '{}', '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z')`,
 		"manual-1", p.ID)
 
-	index := LoadAdoTaskIndex(db, p.ID)
+	index, err := LoadAdoTaskIndex(db, p.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(index) != 2 {
 		t.Fatalf("expected 2 entries in index, got %d", len(index))
@@ -59,7 +62,10 @@ func TestLoadAdoTaskIndexEmpty(t *testing.T) {
 	db := testDB(t)
 
 	// Non-existent project returns empty map, no error
-	index := LoadAdoTaskIndex(db, "nonexistent-project")
+	index, err := LoadAdoTaskIndex(db, "nonexistent-project")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(index) != 0 {
 		t.Errorf("expected empty index, got %d entries", len(index))
 	}
@@ -82,7 +88,10 @@ func TestBuildAdoIDIndex(t *testing.T) {
 	db.Exec(`INSERT INTO tasks (id, project_id, seq, title, status, priority, type, source_type, agent_context, created_at, updated_at) VALUES (?, ?, 3, 'T3', 'todo', 'low', 'task', 'ado', ?, '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z')`,
 		"id-3", p.ID, ctxBad)
 
-	index := BuildAdoIDIndex(db, p.ID)
+	index, err := BuildAdoIDIndex(db, p.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if len(index) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(index))
@@ -98,7 +107,10 @@ func TestBuildAdoIDIndex(t *testing.T) {
 func TestBuildAdoIDIndexEmpty(t *testing.T) {
 	db := testDB(t)
 
-	index := BuildAdoIDIndex(db, "nonexistent")
+	index, err := BuildAdoIDIndex(db, "nonexistent")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(index) != 0 {
 		t.Errorf("expected empty index, got %d", len(index))
 	}

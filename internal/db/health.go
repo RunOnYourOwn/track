@@ -39,7 +39,6 @@ func ComputeHealth(proj *models.Project, tasks []models.Task, prefix string) (in
 	staleThreshold := now.Add(-14 * 24 * time.Hour)
 
 	var wipCount, blockedCount, doneCount int
-	var totalEst, totalAct float64
 	var estimatedPairs int
 
 	for _, t := range tasks {
@@ -60,8 +59,6 @@ func ComputeHealth(proj *models.Project, tasks []models.Task, prefix string) (in
 				f.DoneThisWeek++
 			}
 			if t.EstimateHours > 0 && t.ActualHours > 0 {
-				totalEst += t.EstimateHours
-				totalAct += t.ActualHours
 				estimatedPairs++
 			}
 		case t.Status == "todo":
@@ -87,8 +84,6 @@ func ComputeHealth(proj *models.Project, tasks []models.Task, prefix string) (in
 			}
 		}
 		f.AccuracyPct = (accuracySum / float64(estimatedPairs)) * 100
-		_ = totalEst
-		_ = totalAct
 	}
 	f.EstAccuracy = f.AccuracyPct >= 70
 

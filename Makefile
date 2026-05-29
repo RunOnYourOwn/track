@@ -1,6 +1,9 @@
 .PHONY: build check test vet install clean deploy
 
-check: vet test build
+check: fmt vet test build
+
+fmt:
+	@test -z "$$(gofmt -l .)" || { echo "Unformatted files:"; gofmt -l .; exit 1; }
 
 vet:
 	go vet ./...

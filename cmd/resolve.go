@@ -48,6 +48,15 @@ func resolveID(displayID string) (string, error) {
 	return task.ID, nil
 }
 
+// escapeLIKE escapes backslash, percent, and underscore in s so it can be used
+// as a safe prefix in a SQLite LIKE ? ESCAPE '\' query.
+func escapeLIKE(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
+
 func getPrefix(conn *sql.DB, projectID, hint string) string {
 	if hint != "" && hint != "?" {
 		return strings.ToUpper(hint)
