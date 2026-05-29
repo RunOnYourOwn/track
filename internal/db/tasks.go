@@ -130,9 +130,11 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 }
 
 // isSeqConflict reports whether err is a UNIQUE(project_id, seq) violation,
-// which the create loop retries with a freshly recomputed seq.
+// which the create loop retries with a freshly recomputed seq. Match the seq
+// column specifically — a different UNIQUE violation (e.g. a duplicate id) is a
+// real error, not something to retry.
 func isSeqConflict(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+	return err != nil && strings.Contains(err.Error(), "tasks.seq")
 }
 
 func autoReopenParent(db *sql.DB, parentID string) {

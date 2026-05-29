@@ -236,7 +236,7 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 
 	var req updateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
@@ -300,7 +300,7 @@ type createProjectRequest struct {
 func (h *handler) createProject(w http.ResponseWriter, r *http.Request) {
 	var req createProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Prefix == "" || req.Name == "" {
@@ -418,7 +418,7 @@ func (h *handler) createTask(w http.ResponseWriter, r *http.Request) {
 
 	var req createTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Title == "" {
@@ -495,7 +495,7 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 
 	var req updateTaskRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
@@ -669,7 +669,7 @@ func (h *handler) createDep(w http.ResponseWriter, r *http.Request) {
 
 	var req createDepRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.ToTaskID == "" {
@@ -840,7 +840,7 @@ func (h *handler) createDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	var req createDecisionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if strings.TrimSpace(req.Title) == "" {
@@ -886,7 +886,7 @@ func (h *handler) createLearning(w http.ResponseWriter, r *http.Request) {
 	}
 	var req createLearningRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if strings.TrimSpace(req.Title) == "" {
@@ -920,7 +920,7 @@ type resolveDecisionRequest struct {
 func (h *handler) resolveDecision(w http.ResponseWriter, r *http.Request) {
 	var req resolveDecisionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if strings.TrimSpace(req.Decision) == "" {
@@ -1132,7 +1132,7 @@ func (h *handler) createSprint(w http.ResponseWriter, r *http.Request) {
 
 	var req createSprintRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Name == "" {
@@ -1162,7 +1162,7 @@ func (h *handler) updateSprint(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req updateSprintRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Status == "" {

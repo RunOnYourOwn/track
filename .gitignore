@@ -1,6 +1,7 @@
 track
 cover.out
 *.db
+ado.json
 tools.yaml
 .deep-audit.md
 .DS_Store
