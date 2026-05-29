@@ -113,15 +113,25 @@ func ListDecisions(db *sql.DB, projectID string, statuses []string, expiring boo
 
 func ResolveDecision(db *sql.DB, id, decision, rationale string) error {
 	now := Now()
+	// Guard with status != 'decided' so a finalized decision's rationale can't be
+	// silently overwritten by a second resolve.
 	res, err := db.Exec(`
-		UPDATE decisions SET decision = ?, rationale = ?, status = 'decided', decided_at = ? WHERE id = ?`,
+		UPDATE decisions SET decision = ?, rationale = ?, status = 'decided', decided_at = ? WHERE id = ? AND status != 'decided'`,
 		decision, rationale, now, id)
 	if err != nil {
 		return err
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return fmt.Errorf("decision %q not found", id)
+	if n, _ := res.RowsAffected(); n == 0 {
+		// No row changed: the id is missing, or it was already decided. Distinguish.
+		var status string
+		switch scanErr := db.QueryRow(`SELECT status FROM decisions WHERE id = ?`, id).Scan(&status); scanErr {
+		case sql.ErrNoRows:
+			return fmt.Errorf("decision %q not found", id)
+		case nil:
+			return fmt.Errorf("decision %q is already decided", id)
+		default:
+			return scanErr
+		}
 	}
 	return nil
 }
