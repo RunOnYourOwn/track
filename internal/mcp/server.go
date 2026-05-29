@@ -256,6 +256,14 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleStatus(conn, args)
 	case "track_blocker_list":
 		return handleBlockerList(conn, args)
+	case "track_blocker_create":
+		return handleBlockerCreate(conn, args)
+	case "track_blocker_resolve":
+		return handleBlockerResolve(conn, args)
+	case "track_decision_list":
+		return handleDecisionList(conn, args)
+	case "track_learn_list":
+		return handleLearnList(conn, args)
 	case "track_sprint_create":
 		return handleSprintCreate(conn, args)
 	case "track_sprint_list":
@@ -1028,6 +1036,116 @@ func handleBlockerList(conn *sql.DB, args map[string]any) (*ToolCallResult, erro
 	return jsonResult(blockers), nil
 }
 
+func handleBlockerCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "project")
+	if prefix == "" {
+		return nil, fmt.Errorf("project is required")
+	}
+	title := strArg(args, "title")
+	if title == "" {
+		return nil, fmt.Errorf("title is required")
+	}
+	projectID, err := resolveProjectID(conn, prefix)
+	if err != nil {
+		return nil, err
+	}
+	taskID := ""
+	if t := strArg(args, "task"); t != "" {
+		if taskID, err = resolveTaskID(conn, t); err != nil {
+			return nil, err
+		}
+	}
+	blockerType := strArg(args, "type")
+	if blockerType == "" {
+		blockerType = "external"
+	}
+	b, err := db.CreateBlocker(conn, projectID, title, blockerType, taskID,
+		strArg(args, "owner"), strArg(args, "escalation_date"), strArg(args, "notes"))
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(b), nil
+}
+
+func handleBlockerResolve(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	id := strArg(args, "id")
+	if id == "" {
+		return nil, fmt.Errorf("id is required (full blocker id from track_blocker_list)")
+	}
+	if err := db.ResolveBlocker(conn, id); err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("resolved blocker %s", id)), nil
+}
+
+func handleDecisionList(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	var statuses []string
+	if s := strArg(args, "status"); s != "" {
+		statuses = strings.Split(s, ",")
+	}
+	expiring := boolArg(args, "expiring", false)
+
+	if prefix := strArg(args, "project"); prefix != "" {
+		projectID, err := resolveProjectID(conn, prefix)
+		if err != nil {
+			return nil, err
+		}
+		ds, err := db.ListDecisions(conn, projectID, statuses, expiring)
+		if err != nil {
+			return nil, err
+		}
+		return jsonResult(ds), nil
+	}
+
+	projects, err := db.ListProjects(conn)
+	if err != nil {
+		return nil, err
+	}
+	var all []interface{}
+	for _, p := range projects {
+		ds, err := db.ListDecisions(conn, p.ID, statuses, expiring)
+		if err != nil {
+			return nil, fmt.Errorf("list decisions for %s: %w", p.Prefix, err)
+		}
+		for _, d := range ds {
+			all = append(all, d)
+		}
+	}
+	return jsonResult(all), nil
+}
+
+func handleLearnList(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	category := strArg(args, "category")
+
+	if prefix := strArg(args, "project"); prefix != "" {
+		projectID, err := resolveProjectID(conn, prefix)
+		if err != nil {
+			return nil, err
+		}
+		ls, err := db.ListLearnings(conn, projectID, category)
+		if err != nil {
+			return nil, err
+		}
+		return jsonResult(ls), nil
+	}
+
+	projects, err := db.ListProjects(conn)
+	if err != nil {
+		return nil, err
+	}
+	var all []interface{}
+	for _, p := range projects {
+		ls, err := db.ListLearnings(conn, p.ID, category)
+		if err != nil {
+			return nil, fmt.Errorf("list learnings for %s: %w", p.Prefix, err)
+		}
+		for _, l := range ls {
+			all = append(all, l)
+		}
+	}
+	return jsonResult(all), nil
+}
+
 // --- sprint tools (parity with the CLI sprint subcommands) ---
 
 func handleSprintCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -1436,6 +1554,57 @@ func allTools() []Tool {
 				Properties: map[string]PropertySchema{
 					"project": {Type: "string", Description: "Project prefix (omit for all projects)"},
 					"open":    {Type: "boolean", Description: "Only show open (unresolved) blockers (default true)"},
+				},
+			},
+		},
+		{
+			Name:        "track_blocker_create",
+			Description: "Create a blocker for a project",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"project":         {Type: "string", Description: "Project prefix (required)"},
+					"title":           {Type: "string", Description: "Blocker title (required)"},
+					"type":            {Type: "string", Description: "Blocker type (default: external)"},
+					"task":            {Type: "string", Description: "Related task ID (PREFIX-NNN or ULID)"},
+					"owner":           {Type: "string", Description: "Owner"},
+					"escalation_date": {Type: "string", Description: "Escalation date YYYY-MM-DD"},
+					"notes":           {Type: "string", Description: "Notes"},
+				},
+				Required: []string{"project", "title"},
+			},
+		},
+		{
+			Name:        "track_blocker_resolve",
+			Description: "Resolve (close) a blocker by its id",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"id": {Type: "string", Description: "Full blocker id (from track_blocker_list)"},
+				},
+				Required: []string{"id"},
+			},
+		},
+		{
+			Name:        "track_decision_list",
+			Description: "List decisions, optionally filtered by project, status, or expiring",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"project":  {Type: "string", Description: "Project prefix (omit for all projects)"},
+					"status":   {Type: "string", Description: "Comma-separated statuses: pending,decided"},
+					"expiring": {Type: "boolean", Description: "Only decisions due for revisit"},
+				},
+			},
+		},
+		{
+			Name:        "track_learn_list",
+			Description: "List learnings, optionally filtered by project or category",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"project":  {Type: "string", Description: "Project prefix (omit for all projects)"},
+					"category": {Type: "string", Description: "Filter by category"},
 				},
 			},
 		},
