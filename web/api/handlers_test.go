@@ -179,6 +179,31 @@ func TestTaskCreateValidationHTTP(t *testing.T) {
 	resp.Body.Close()
 }
 
+func TestUpdateTaskClearsDescription(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"CLR","name":"C"}`).Body.Close()
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/CLR/tasks", `{"title":"t","description":"original"}`)
+	var task struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&task)
+	resp.Body.Close()
+
+	// An explicit empty description must clear it (description is *string, so ""
+	// is distinguishable from "field omitted = leave unchanged").
+	doJSON(t, "PATCH", srv.URL+"/api/tasks/"+task.ID, `{"description":""}`).Body.Close()
+
+	resp = doJSON(t, "GET", srv.URL+"/api/tasks/"+task.ID, "")
+	var got struct {
+		Description string `json:"description"`
+	}
+	json.NewDecoder(resp.Body).Decode(&got)
+	resp.Body.Close()
+	if got.Description != "" {
+		t.Fatalf("description not cleared: got %q", got.Description)
+	}
+}
+
 // estimate_hours can be cleared back to 0 (the old >0 guard silently dropped a
 // 0, so an estimate could never be un-set), and a negative value is rejected.
 func TestUpdateTaskClearsEstimate(t *testing.T) {

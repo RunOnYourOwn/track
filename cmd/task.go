@@ -335,8 +335,9 @@ var taskEditCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("title"); v != "" {
 			fields["title"] = v
 		}
-		if v, _ := cmd.Flags().GetString("description"); v != "" {
-			fields["description"] = v
+		if cmd.Flags().Changed("description") {
+			v, _ := cmd.Flags().GetString("description")
+			fields["description"] = v // Changed → allow clearing to ""
 		}
 		if v, _ := cmd.Flags().GetString("type"); v != "" {
 			fields["type"] = v
@@ -344,14 +345,17 @@ var taskEditCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("priority"); v != "" {
 			fields["priority"] = v
 		}
-		if v, _ := cmd.Flags().GetString("estimate"); v != "" {
-			fields["estimate_size"] = v
+		if cmd.Flags().Changed("estimate") {
+			v, _ := cmd.Flags().GetString("estimate")
+			fields["estimate_size"] = v // Changed → allow un-sizing
 		}
-		if v, _ := cmd.Flags().GetFloat64("hours"); v > 0 {
-			fields["estimate_hours"] = strconv.FormatFloat(v, 'f', -1, 64)
+		if cmd.Flags().Changed("hours") {
+			v, _ := cmd.Flags().GetFloat64("hours")
+			fields["estimate_hours"] = strconv.FormatFloat(v, 'f', -1, 64) // Changed → allow reset to 0
 		}
-		if v, _ := cmd.Flags().GetInt("agent-minutes"); v > 0 {
-			fields["estimate_agent_minutes"] = strconv.Itoa(v)
+		if cmd.Flags().Changed("agent-minutes") {
+			v, _ := cmd.Flags().GetInt("agent-minutes")
+			fields["estimate_agent_minutes"] = strconv.Itoa(v) // Changed → allow reset to 0
 		}
 		if v, _ := cmd.Flags().GetString("start-date"); v != "" {
 			fields["start_date"] = v
@@ -362,8 +366,9 @@ var taskEditCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("tags"); v != "" {
 			fields["tags"] = v
 		}
-		if v, _ := cmd.Flags().GetInt("sort-order"); v > 0 {
-			fields["sort_order"] = strconv.Itoa(v)
+		if cmd.Flags().Changed("sort-order") {
+			v, _ := cmd.Flags().GetInt("sort-order")
+			fields["sort_order"] = strconv.Itoa(v) // Changed → allow reset to 0
 		}
 
 		for field, value := range fields {

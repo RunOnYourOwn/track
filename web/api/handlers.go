@@ -484,12 +484,14 @@ type updateTaskRequest struct {
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
 	// Pointers so an explicit "" can clear the value (omitted = leave unchanged).
+	// Title/Priority/Type stay plain strings: they are required/validated enums
+	// where an empty value is invalid, so there's nothing to "clear" to.
 	StartDate      *string `json:"start_date"`
 	DueDate        *string `json:"due_date"`
 	CompletionNote *string `json:"completion_note"`
-	Description    string  `json:"description"`
+	Description    *string `json:"description"`
 	Type           string  `json:"type"`
-	EstimateSize   string  `json:"estimate_size"`
+	EstimateSize   *string `json:"estimate_size"`
 	// Pointers so an explicit 0 can clear the estimate / reset the order
 	// (omitted = leave unchanged); a plain value can't distinguish the two.
 	EstimateHours    *float64 `json:"estimate_hours"`
@@ -585,8 +587,8 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.Description != "" {
-		if err := db.UpdateTaskField(h.conn, id, "description", req.Description); err != nil {
+	if req.Description != nil {
+		if err := db.UpdateTaskField(h.conn, id, "description", *req.Description); err != nil {
 			writeServerError(w, err)
 			return
 		}
@@ -599,8 +601,8 @@ func (h *handler) updateTask(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.EstimateSize != "" {
-		if err := db.UpdateTaskField(h.conn, id, "estimate_size", req.EstimateSize); err != nil {
+	if req.EstimateSize != nil {
+		if err := db.UpdateTaskField(h.conn, id, "estimate_size", *req.EstimateSize); err != nil {
 			writeServerError(w, err)
 			return
 		}

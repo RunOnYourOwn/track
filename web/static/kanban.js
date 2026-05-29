@@ -91,21 +91,27 @@ function _toggleColumn(colId) {
 
 function _statsBar() {
   const boardTasks = _tasks.filter(t => (t.type || 'task') === 'task');
-  const total = boardTasks.length;
-  if (total === 0) return '';
-  const done = boardTasks.filter(t => t.status === 'done').length;
-  const inProgress = boardTasks.filter(t => t.status === 'in_progress').length;
-  const waiting = boardTasks.filter(t => isWaiting(t.status)).length;
-  const blocked = boardTasks.filter(t => t.blocked).length;
+  // Exclude cancelled from the progress denominator so cancelled tasks don't
+  // deflate the done % or inflate the backlog count.
+  const activeTasks = boardTasks.filter(t => t.status !== 'cancelled');
+  const total = activeTasks.length;
+  if (total === 0 && boardTasks.length === 0) return '';
+  const done = activeTasks.filter(t => t.status === 'done').length;
+  const inProgress = activeTasks.filter(t => t.status === 'in_progress').length;
+  const waiting = activeTasks.filter(t => isWaiting(t.status)).length;
+  const blocked = activeTasks.filter(t => t.blocked).length;
   const todo = total - done - inProgress - waiting;
-  const pct = Math.round((done / total) * 100);
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  const cancelledCount = boardTasks.filter(t => t.status === 'cancelled').length;
+  const inProgressPct = total > 0 ? Math.round((inProgress / total) * 100) : 0;
 
   return `
     <div class="board-stats">
       <div class="board-stats-progress">
         <div class="board-stats-bar">
           <div class="bar-done" style="width:${pct}%"></div>
-          <div class="bar-inprogress" style="width:${Math.round((inProgress / total) * 100)}%"></div>
+          <div class="bar-inprogress" style="width:${inProgressPct}%"></div>
         </div>
         <span class="board-stats-pct">${pct}%</span>
       </div>
@@ -116,6 +122,7 @@ function _statsBar() {
         ${blocked > 0 ? `<span class="stat-chip blocked">${blocked} blocked</span>` : ''}
         <span class="stat-chip todo">${todo} backlog</span>
         <span class="stat-chip total">${total} total</span>
+        ${cancelledCount > 0 ? `<span class="stat-chip" style="opacity:0.5">${cancelledCount} cancelled</span>` : ''}
         <span class="stat-chip wip ${inProgress >= ((_project && _project.wip_limit) || 3) ? 'wip-over' : ''}" id="stats-wip-chip" title="Project settings — WIP limit, sort, phase">WIP: ${inProgress}/${(_project && _project.wip_limit) || 3}</span>
         <span class="stat-chip" id="stats-sort-chip" title="Task sort order — click for project settings">Sort: ${TASK_SORT_LABELS[(_project && _project.task_sort) || 'priority'] || 'Priority'}</span>
       </div>

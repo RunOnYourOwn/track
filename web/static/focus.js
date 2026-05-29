@@ -118,7 +118,11 @@ function _draw() {
 
 function _renderActiveCard(task) {
   const displayId = `${_prefix}-${task.seq}`;
-  const elapsed = _elapsed(task.updated_at);
+  // There is no reliable "entered in_progress" timestamp in the task API
+  // response (status history is a separate table not included here). Using
+  // updated_at as elapsed "time on task" is misleading — any edit resets it.
+  // Show it as "updated X ago" so the label is accurate.
+  const updatedAgo = _elapsed(task.updated_at);
   const estimate = task.estimate_hours > 0 ? `<span class="focus-estimate">${task.estimate_hours}h est</span>` : '';
   const desc = task.description ? `<div class="focus-active-desc">${escHtml(_trunc(task.description, 60))}</div>` : '';
   return `<div class="focus-active-card" data-task-id="${task.id}" role="button" tabindex="0">
@@ -131,8 +135,8 @@ function _renderActiveCard(task) {
     ${desc}
     <div class="focus-active-timer">
       <span class="focus-timer-dot"></span>
-      <span class="focus-timer-value" data-timer-start="${task.updated_at}">${elapsed}</span>
-      <span class="focus-timer-label">on task</span>
+      <span class="focus-timer-value" data-timer-start="${task.updated_at}">${updatedAgo}</span>
+      <span class="focus-timer-label">since last update</span>
     </div>
     <div class="focus-active-actions">
       <button class="focus-btn focus-btn-done" data-action="done" data-task-id="${task.id}">✓ Done</button>

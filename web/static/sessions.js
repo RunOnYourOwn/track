@@ -5,6 +5,10 @@ const _sessionStatsCache = {};
 const _expandedSessions = {};
 
 async function renderSessions() {
+  // Invalidate the stats cache on every view entry so re-rendering after edits
+  // from other views always fetches fresh stats.
+  Object.keys(_sessionStatsCache).forEach(k => delete _sessionStatsCache[k]);
+
   render(`
     <div class="page-sessions">
       <div class="page-header">
