@@ -15,13 +15,17 @@ function _getLeftPanelWidth() {
   return window.innerWidth < 600 ? 140 : 300;
 }
 
+// Keys must stay in sync with db.OrderedStatuses (todo, in_progress, blocked,
+// done, cancelled, waiting_review, waiting_external, waiting_dependency).
 const STATUS_COLORS = {
-  todo:              { bar: '#222', progress: '#484f58' },
-  in_progress:       { bar: '#1f3a5f', progress: '#58a6ff' },
-  done:              { bar: '#1a3a22', progress: '#3fb950' },
-  waiting_external:  { bar: '#3d2c00', progress: '#d29922' },
-  waiting_decision:  { bar: '#3d2c00', progress: '#d29922' },
-  waiting_feedback:  { bar: '#3d2c00', progress: '#d29922' },
+  todo:               { bar: '#222',    progress: '#484f58' },
+  in_progress:        { bar: '#1f3a5f', progress: '#58a6ff' },
+  blocked:            { bar: '#3d1518', progress: '#f85149' },
+  done:               { bar: '#1a3a22', progress: '#3fb950' },
+  cancelled:          { bar: '#2a2a2a', progress: '#707070' },
+  waiting_review:     { bar: '#3d2c00', progress: '#d29922' },
+  waiting_external:   { bar: '#3d2c00', progress: '#d29922' },
+  waiting_dependency: { bar: '#3d2c00', progress: '#d29922' },
 };
 
 let _prefix = '';
@@ -198,6 +202,13 @@ function _renderTimeline() {
 
   const container = document.getElementById('timeline-container');
   if (!container) return;
+
+  // Nothing visible (e.g. every task is done and "Show done" is off) — show a
+  // message instead of an empty SVG. The toolbar above (incl. the toggle) stays.
+  if (activeTasks.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-title">Nothing to show</div><div class="empty-state-body">No active tasks in this view.</div></div>';
+    return;
+  }
 
   const LEFT_PANEL_WIDTH = _getLeftPanelWidth();
   const totalWidth = Math.max(window.innerWidth - 24, LEFT_PANEL_WIDTH + 200);

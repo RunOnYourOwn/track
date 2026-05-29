@@ -151,6 +151,29 @@ func TestCreateTaskHonorsTypeAndStartDate(t *testing.T) {
 	}
 }
 
+func TestCreateTaskHonorsAgentMinutes(t *testing.T) {
+	srv, _ := newTestServer(t)
+	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"AGM","name":"A"}`).Body.Close()
+
+	// estimate_agent_minutes drives estimation accuracy + the parent rollup, so it
+	// must survive HTTP create (it was silently dropped before — not in the struct).
+	resp := doJSON(t, "POST", srv.URL+"/api/projects/AGM/tasks",
+		`{"title":"t","estimate_agent_minutes":30}`)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create: got %d, want 201", resp.StatusCode)
+	}
+	var task struct {
+		EstimateAgentMinutes int `json:"estimate_agent_minutes"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	resp.Body.Close()
+	if task.EstimateAgentMinutes != 30 {
+		t.Fatalf("estimate_agent_minutes dropped on HTTP create: got %d want 30", task.EstimateAgentMinutes)
+	}
+}
+
 func TestTaskCreateValidationHTTP(t *testing.T) {
 	srv, _ := newTestServer(t)
 	doJSON(t, "POST", srv.URL+"/api/projects", `{"prefix":"WEB","name":"W"}`).Body.Close()
