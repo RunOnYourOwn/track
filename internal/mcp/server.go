@@ -250,6 +250,20 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 		return handleStatus(conn, args)
 	case "track_blocker_list":
 		return handleBlockerList(conn, args)
+	case "track_sprint_create":
+		return handleSprintCreate(conn, args)
+	case "track_sprint_list":
+		return handleSprintList(conn, args)
+	case "track_sprint_start":
+		return handleSprintStart(conn, args)
+	case "track_sprint_complete":
+		return handleSprintComplete(conn, args)
+	case "track_sprint_add":
+		return handleSprintAdd(conn, args)
+	case "track_sprint_remove":
+		return handleSprintRemove(conn, args)
+	case "track_sprint_tasks":
+		return handleSprintTasks(conn, args)
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", call.Name)
 	}
@@ -435,6 +449,7 @@ func handleTaskCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 		EstimateHours: floatArg(args, "hours"),
 		SourceType:    strArg(args, "source"),
 		AgentContext:  strArg(args, "agent_context"),
+		StartDate:     strArg(args, "start_date"),
 		DueDate:       strArg(args, "due_date"),
 	}
 
@@ -596,6 +611,7 @@ func handleTaskUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 		"type":          strArg(args, "type"),
 		"priority":      strArg(args, "priority"),
 		"estimate_size": strArg(args, "estimate_size"),
+		"start_date":    strArg(args, "start_date"),
 		"due_date":      strArg(args, "due_date"),
 		"tags":          strArg(args, "tags"),
 	}
@@ -919,6 +935,125 @@ func handleBlockerList(conn *sql.DB, args map[string]any) (*ToolCallResult, erro
 	return jsonResult(blockers), nil
 }
 
+// --- sprint tools (parity with the CLI sprint subcommands) ---
+
+func handleSprintCreate(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "project")
+	name := strArg(args, "name")
+	if prefix == "" || name == "" {
+		return nil, fmt.Errorf("project and name are required")
+	}
+	projectID, err := resolveProjectID(conn, prefix)
+	if err != nil {
+		return nil, err
+	}
+	s, err := db.CreateSprint(conn, db.CreateSprintOpts{
+		ProjectID: projectID,
+		Name:      name,
+		Goal:      strArg(args, "goal"),
+		StartDate: strArg(args, "start_date"),
+		EndDate:   strArg(args, "end_date"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(s), nil
+}
+
+func handleSprintList(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "project")
+	if prefix == "" {
+		return nil, fmt.Errorf("project is required")
+	}
+	projectID, err := resolveProjectID(conn, prefix)
+	if err != nil {
+		return nil, err
+	}
+	sprints, err := db.ListSprints(conn, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(sprints), nil
+}
+
+func handleSprintStart(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	return sprintSetStatus(conn, args, "active")
+}
+
+func handleSprintComplete(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	return sprintSetStatus(conn, args, "completed")
+}
+
+func sprintSetStatus(conn *sql.DB, args map[string]any, status string) (*ToolCallResult, error) {
+	idStr := strArg(args, "id")
+	if idStr == "" {
+		return nil, fmt.Errorf("id is required")
+	}
+	sid, err := db.ResolveSprintID(conn, idStr)
+	if err != nil {
+		return nil, err
+	}
+	if err := db.UpdateSprintStatus(conn, sid, status); err != nil {
+		return nil, err
+	}
+	s, err := db.GetSprint(conn, sid)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(s), nil
+}
+
+func handleSprintAdd(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	return sprintTaskMembership(conn, args, true)
+}
+
+func handleSprintRemove(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	return sprintTaskMembership(conn, args, false)
+}
+
+func sprintTaskMembership(conn *sql.DB, args map[string]any, add bool) (*ToolCallResult, error) {
+	sprintStr := strArg(args, "sprint_id")
+	taskStr := strArg(args, "task_id")
+	if sprintStr == "" || taskStr == "" {
+		return nil, fmt.Errorf("sprint_id and task_id are required")
+	}
+	sid, err := db.ResolveSprintID(conn, sprintStr)
+	if err != nil {
+		return nil, err
+	}
+	taskID, err := resolveTaskID(conn, taskStr)
+	if err != nil {
+		return nil, err
+	}
+	verb := "removed"
+	if add {
+		err = db.AddTaskToSprint(conn, sid, taskID)
+		verb = "added"
+	} else {
+		err = db.RemoveTaskFromSprint(conn, sid, taskID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("Task %s %s sprint %s.", taskStr, verb, sprintStr)), nil
+}
+
+func handleSprintTasks(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	sprintStr := strArg(args, "sprint_id")
+	if sprintStr == "" {
+		return nil, fmt.Errorf("sprint_id is required")
+	}
+	sid, err := db.ResolveSprintID(conn, sprintStr)
+	if err != nil {
+		return nil, err
+	}
+	tasks, err := db.ListSprintTasks(conn, sid)
+	if err != nil {
+		return nil, err
+	}
+	return jsonResult(tasks), nil
+}
+
 // --- tool definitions ---
 
 func allTools() []Tool {
@@ -956,6 +1091,7 @@ func allTools() []Tool {
 					"source":        {Type: "string", Description: "planned | discovered | stakeholder | bug | debt"},
 					"agent_context": {Type: "string", Description: "Agent context JSON"},
 					"parent_id":     {Type: "string", Description: "Parent task ID (PREFIX-NNN or ULID)"},
+					"start_date":    {Type: "string", Description: "Start date YYYY-MM-DD"},
 					"due_date":      {Type: "string", Description: "Due date YYYY-MM-DD"},
 				},
 				Required: []string{"project", "title"},
@@ -1045,6 +1181,7 @@ func allTools() []Tool {
 					"estimate_size":          {Type: "string", Description: "T-shirt size: XS | S | M | L | XL"},
 					"estimate_hours":         {Type: "number", Description: "Estimated hours"},
 					"estimate_agent_minutes": {Type: "number", Description: "Estimated agent minutes"},
+					"start_date":             {Type: "string", Description: "Start date YYYY-MM-DD"},
 					"due_date":               {Type: "string", Description: "Due date YYYY-MM-DD"},
 					"tags":                   {Type: "string", Description: "Comma-separated tags"},
 					"parent_id":              {Type: "string", Description: "Parent task ID (PREFIX-NNN or ULID), or 'null' to unparent"},
@@ -1166,6 +1303,81 @@ func allTools() []Tool {
 					"project": {Type: "string", Description: "Project prefix (omit for all projects)"},
 					"open":    {Type: "boolean", Description: "Only show open (unresolved) blockers (default true)"},
 				},
+			},
+		},
+		{
+			Name:        "track_sprint_create",
+			Description: "Create a sprint for a project",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"project":    {Type: "string", Description: "Project prefix (required)"},
+					"name":       {Type: "string", Description: "Sprint name (required)"},
+					"goal":       {Type: "string", Description: "Sprint goal"},
+					"start_date": {Type: "string", Description: "Start date YYYY-MM-DD"},
+					"end_date":   {Type: "string", Description: "End date YYYY-MM-DD"},
+				},
+				Required: []string{"project", "name"},
+			},
+		},
+		{
+			Name:        "track_sprint_list",
+			Description: "List sprints for a project",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]PropertySchema{"project": {Type: "string", Description: "Project prefix (required)"}},
+				Required:   []string{"project"},
+			},
+		},
+		{
+			Name:        "track_sprint_start",
+			Description: "Start a sprint (set status to active)",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]PropertySchema{"id": {Type: "string", Description: "Sprint ID or PREFIX-S-N (required)"}},
+				Required:   []string{"id"},
+			},
+		},
+		{
+			Name:        "track_sprint_complete",
+			Description: "Complete a sprint (set status to completed)",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]PropertySchema{"id": {Type: "string", Description: "Sprint ID or PREFIX-S-N (required)"}},
+				Required:   []string{"id"},
+			},
+		},
+		{
+			Name:        "track_sprint_add",
+			Description: "Add a task to a sprint",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"sprint_id": {Type: "string", Description: "Sprint ID or PREFIX-S-N (required)"},
+					"task_id":   {Type: "string", Description: "Task ID: PREFIX-NNN or ULID (required)"},
+				},
+				Required: []string{"sprint_id", "task_id"},
+			},
+		},
+		{
+			Name:        "track_sprint_remove",
+			Description: "Remove a task from a sprint",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"sprint_id": {Type: "string", Description: "Sprint ID or PREFIX-S-N (required)"},
+					"task_id":   {Type: "string", Description: "Task ID: PREFIX-NNN or ULID (required)"},
+				},
+				Required: []string{"sprint_id", "task_id"},
+			},
+		},
+		{
+			Name:        "track_sprint_tasks",
+			Description: "List the tasks in a sprint",
+			InputSchema: InputSchema{
+				Type:       "object",
+				Properties: map[string]PropertySchema{"sprint_id": {Type: "string", Description: "Sprint ID or PREFIX-S-N (required)"}},
+				Required:   []string{"sprint_id"},
 			},
 		},
 	}

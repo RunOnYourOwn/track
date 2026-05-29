@@ -27,6 +27,75 @@ func TestSafeHandleRequestRecoversPanic(t *testing.T) {
 	}
 }
 
+// Parity: start_date is settable via MCP, and the sprint tools work end-to-end.
+func TestSprintToolsAndStartDate(t *testing.T) {
+	conn := db.OpenTestDB(t)
+	if _, err := db.CreateProject(conn, "SP", "Sprint Proj", "", "", "", "", 3); err != nil {
+		t.Fatal(err)
+	}
+
+	tres, err := handleTaskCreate(conn, map[string]any{"project": "SP", "title": "T1", "start_date": "2026-06-01"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var task struct {
+		ID        string  `json:"id"`
+		StartDate *string `json:"start_date"`
+	}
+	json.Unmarshal([]byte(tres.Content[0].Text), &task)
+	if task.StartDate == nil || *task.StartDate != "2026-06-01" {
+		t.Fatalf("start_date not set via MCP create: %+v", task)
+	}
+
+	sres, err := handleSprintCreate(conn, map[string]any{"project": "SP", "name": "Sprint 1", "goal": "ship"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sprint struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	json.Unmarshal([]byte(sres.Content[0].Text), &sprint)
+	if sprint.ID == "" {
+		t.Fatalf("sprint create returned no id: %s", sres.Content[0].Text)
+	}
+
+	if _, err := handleSprintAdd(conn, map[string]any{"sprint_id": sprint.ID, "task_id": task.ID}); err != nil {
+		t.Fatalf("sprint add: %v", err)
+	}
+	tk, err := handleSprintTasks(conn, map[string]any{"sprint_id": sprint.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sprintTasks []map[string]any
+	json.Unmarshal([]byte(tk.Content[0].Text), &sprintTasks)
+	if len(sprintTasks) != 1 {
+		t.Fatalf("expected 1 task in sprint, got %d", len(sprintTasks))
+	}
+
+	st, err := handleSprintStart(conn, map[string]any{"id": sprint.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal([]byte(st.Content[0].Text), &started)
+	if started.Status != "active" {
+		t.Fatalf("sprint should be active after start, got %q", started.Status)
+	}
+
+	lst, err := handleSprintList(conn, map[string]any{"project": "SP"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sprints []map[string]any
+	json.Unmarshal([]byte(lst.Content[0].Text), &sprints)
+	if len(sprints) != 1 {
+		t.Fatalf("expected 1 sprint listed, got %d", len(sprints))
+	}
+}
+
 func mustProjectID(t *testing.T, conn *sql.DB, prefix string) string {
 	t.Helper()
 	id, err := resolveProjectID(conn, prefix)
