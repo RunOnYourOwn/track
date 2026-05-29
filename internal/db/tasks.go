@@ -123,7 +123,9 @@ func CreateTask(d *sql.DB, opts CreateTaskOpts) (*models.Task, error) {
 	}
 
 	if opts.ParentID != "" && source != "bug" && source != "debt" {
-		autoReopenParent(d, opts.ParentID)
+		if err := autoReopenParent(d, opts.ParentID); err != nil {
+			return nil, err
+		}
 	}
 
 	return GetTask(d, id)
@@ -137,27 +139,35 @@ func isSeqConflict(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "tasks.seq")
 }
 
-func autoReopenParent(db *sql.DB, parentID string) {
-	visited := map[string]bool{}
-	autoReopenParentWalk(db, parentID, visited)
+func autoReopenParent(db *sql.DB, parentID string) error {
+	return autoReopenParentWalk(db, parentID, map[string]bool{})
 }
 
-func autoReopenParentWalk(db *sql.DB, parentID string, visited map[string]bool) {
+func autoReopenParentWalk(db *sql.DB, parentID string, visited map[string]bool) error {
 	if visited[parentID] {
-		return
+		return nil
 	}
 	visited[parentID] = true
 
 	var status string
 	var grandparentID sql.NullString
 	err := db.QueryRow(`SELECT status, parent_id FROM tasks WHERE id = ?`, parentID).Scan(&status, &grandparentID)
-	if err != nil || status != "done" {
-		return
+	if err == sql.ErrNoRows {
+		return nil // parent gone — nothing to reopen
 	}
-	MoveTask(db, parentID, "in_progress")
+	if err != nil {
+		return err
+	}
+	if status != "done" {
+		return nil
+	}
+	if err := MoveTask(db, parentID, "in_progress"); err != nil {
+		return err
+	}
 	if grandparentID.Valid && grandparentID.String != "" {
-		autoReopenParentWalk(db, grandparentID.String, visited)
+		return autoReopenParentWalk(db, grandparentID.String, visited)
 	}
+	return nil
 }
 
 func GetTask(db *sql.DB, id string) (*models.Task, error) {
@@ -283,12 +293,19 @@ func rollupParentDates(tasks []models.Task) {
 	}
 	type span struct{ start, due string }
 	memo := map[string]span{}
+	visiting := map[string]bool{}
 	var compute func(i int) span
 	compute = func(i int) span {
 		t := &tasks[i]
 		if s, ok := memo[t.ID]; ok {
 			return s
 		}
+		// memo is set after recursing into children, so guard against a parent_id
+		// cycle (re-entering an in-progress node) to avoid unbounded recursion.
+		if visiting[t.ID] {
+			return span{}
+		}
+		visiting[t.ID] = true
 		kids := childIdx[t.ID]
 		var sp span
 		if len(kids) == 0 {
@@ -359,7 +376,9 @@ func MoveTask(db *sql.DB, id, status string) error {
 		return err
 	}
 	if isTerminalStatus(status) {
-		autoCloseParent(db, id)
+		if err := autoCloseParent(db, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -443,41 +462,45 @@ func computeActiveHours(tx *sql.Tx, taskID string) (float64, error) {
 	return totalSeconds.Float64 / 3600.0, nil
 }
 
-func autoCloseParent(db *sql.DB, childID string) {
-	visited := map[string]bool{}
-	autoCloseParentWalk(db, childID, visited)
+func autoCloseParent(db *sql.DB, childID string) error {
+	return autoCloseParentWalk(db, childID, map[string]bool{})
 }
 
-func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) {
+func autoCloseParentWalk(db *sql.DB, childID string, visited map[string]bool) error {
 	if visited[childID] {
-		return
+		return nil
 	}
 	visited[childID] = true
 
 	var parentID sql.NullString
 	if err := db.QueryRow(`SELECT parent_id FROM tasks WHERE id = ?`, childID).Scan(&parentID); err != nil {
-		return
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		return err
 	}
 	if !parentID.Valid || parentID.String == "" {
-		return
+		return nil
 	}
 	if visited[parentID.String] {
-		return
+		return nil
 	}
 
 	var pending int
-	// On a scan error, bail rather than treating pending as 0 — otherwise a
+	// Surface a scan error rather than treating pending as 0 — otherwise a
 	// transient DB error would auto-close a parent that still has open children.
 	if err := db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status NOT IN ('done','cancelled')`, parentID.String).Scan(&pending); err != nil {
-		return
+		return err
 	}
 	if pending > 0 {
-		return
+		return nil
 	}
 
 	visited[parentID.String] = true
-	moveTaskNoAutoClose(db, parentID.String, "done")
-	autoCloseParentWalk(db, parentID.String, visited)
+	if err := moveTaskNoAutoClose(db, parentID.String, "done"); err != nil {
+		return err
+	}
+	return autoCloseParentWalk(db, parentID.String, visited)
 }
 
 func CompleteTask(db *sql.DB, id string, actualHours float64, note string) error {
@@ -485,9 +508,23 @@ func CompleteTask(db *sql.DB, id string, actualHours float64, note string) error
 		return err
 	}
 	if actualHours > 0 {
-		now := Now()
-		if _, err := db.Exec(`UPDATE tasks SET actual_hours = ?, updated_at = ? WHERE id = ?`, actualHours, now, id); err != nil {
+		// If the task already has manually logged time, record the completion hours
+		// as another time entry (which accumulates into actual_hours) instead of
+		// overwriting the running total — overwriting silently discarded logged time
+		// and corrupted estimate-accuracy reporting.
+		var logged int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM time_entries WHERE task_id = ?`, id).Scan(&logged); err != nil {
 			return err
+		}
+		if logged > 0 {
+			if err := LogTime(db, id, "", actualHours, note); err != nil {
+				return err
+			}
+		} else {
+			now := Now()
+			if _, err := db.Exec(`UPDATE tasks SET actual_hours = ?, updated_at = ? WHERE id = ?`, actualHours, now, id); err != nil {
+				return err
+			}
 		}
 	}
 	if note != "" {

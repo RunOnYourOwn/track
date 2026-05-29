@@ -1,6 +1,72 @@
 package db
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/RunOnYourOwn/track/internal/models"
+)
+
+// A parent_id cycle (only reachable via raw SQL — SetParentID guards against it)
+// must not stack-overflow the date rollup.
+func TestRollupParentDatesCycleSafe(t *testing.T) {
+	bID, aID := "B", "A"
+	tasks := []models.Task{
+		{ID: "A", ParentID: &bID, CreatedAt: time.Now()},
+		{ID: "B", ParentID: &aID, CreatedAt: time.Now()},
+	}
+	done := make(chan struct{})
+	go func() { rollupParentDates(tasks); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("rollupParentDates did not terminate on a parent_id cycle")
+	}
+}
+
+// CompleteTask with explicit hours must not overwrite already-logged time — the
+// completion hours are added so the running total (and estimate accuracy) survive.
+func TestCompleteTaskSumsLoggedHours(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "CHT")
+	tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t", Type: "task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := LogTime(d, tk.ID, "", 3.0, "session"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CompleteTask(d, tk.ID, 2.0, "done"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetTask(d, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActualHours != 5.0 {
+		t.Fatalf("actual_hours: got %v want 5 (3 logged + 2 completion)", got.ActualHours)
+	}
+}
+
+// With no prior logged time, an explicit completion-hours value is set directly.
+func TestCompleteTaskSetsHoursWhenNoLogs(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "CHN")
+	tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t", Type: "task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CompleteTask(d, tk.ID, 4.0, ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetTask(d, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ActualHours != 4.0 {
+		t.Fatalf("actual_hours: got %v want 4", got.ActualHours)
+	}
+}
 
 // Epic/feature dates are derived from descendants on a full-project ListTasks:
 // start = earliest descendant start, due = latest descendant due.
