@@ -12,7 +12,9 @@ func TestComputeHealthAllFactors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "done", EstimateHours: 2})
+	// Accuracy is on the agent axis (estimate_agent_minutes vs actual_hours):
+	// 120 agent-min = 2h, logged actual 2h → 100% accurate.
+	tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "done", EstimateHours: 2, EstimateAgentMinutes: 120})
 	if err != nil {
 		t.Fatal(err)
 	}

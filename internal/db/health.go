@@ -58,7 +58,7 @@ func ComputeHealth(proj *models.Project, tasks []models.Task, prefix string) (in
 			if t.CompletedAt != nil && t.CompletedAt.After(weekAgo) {
 				f.DoneThisWeek++
 			}
-			if t.EstimateHours > 0 && t.ActualHours > 0 {
+			if t.EstimateAgentMinutes > 0 && t.ActualHours > 0 {
 				estimatedPairs++
 			}
 		case t.Status == "todo":
@@ -75,11 +75,16 @@ func ComputeHealth(proj *models.Project, tasks []models.Task, prefix string) (in
 	f.MakingProgress = f.DoneThisWeek > 0 || doneCount > 0
 	f.NoStale = len(f.StaleTaskIDs) == 0
 
+	// Estimation accuracy compares the AGENT estimate against the AGENT actual.
+	// actual_hours is the task's active in_progress wall-clock (the agent's working
+	// time), so the matching estimate is estimate_agent_minutes — not estimate_hours,
+	// which is a human-hours estimate on a different axis. Convert agent-minutes→hours.
 	if estimatedPairs > 0 {
 		var accuracySum float64
 		for _, t := range tasks {
-			if t.Status == "done" && t.EstimateHours > 0 && t.ActualHours > 0 {
-				acc := math.Min(t.EstimateHours, t.ActualHours) / math.Max(t.EstimateHours, t.ActualHours)
+			if t.Status == "done" && t.EstimateAgentMinutes > 0 && t.ActualHours > 0 {
+				agentEstHours := float64(t.EstimateAgentMinutes) / 60.0
+				acc := math.Min(agentEstHours, t.ActualHours) / math.Max(agentEstHours, t.ActualHours)
 				accuracySum += acc
 			}
 		}

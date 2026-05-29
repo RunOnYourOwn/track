@@ -10,13 +10,16 @@ import (
 )
 
 // VelocityWeek is one ISO-week bucket of completed-task throughput and estimate
-// accuracy. JSON tags match the prior cmd-layer output so `--json` is unchanged.
+// accuracy. Accuracy is on the AGENT axis: EstAgentHours (the agent estimate,
+// estimate_agent_minutes→hours) vs ActHours (actual_hours = the agent's active
+// in_progress time). Comparing actual_hours against the human estimate_hours
+// would be a different axis and isn't a meaningful accuracy.
 type VelocityWeek struct {
-	Label    string  `json:"week"`
-	Done     int     `json:"done"`
-	EstHours float64 `json:"est_hours"`
-	ActHours float64 `json:"act_hours"`
-	Accuracy float64 `json:"accuracy_pct"`
+	Label         string  `json:"week"`
+	Done          int     `json:"done"`
+	EstAgentHours float64 `json:"est_agent_hours"`
+	ActHours      float64 `json:"act_hours"`
+	Accuracy      float64 `json:"accuracy_pct"`
 }
 
 // ComputeVelocity buckets a project's done tasks completed within the last
@@ -25,7 +28,7 @@ type VelocityWeek struct {
 func ComputeVelocity(conn *sql.DB, projectID string, weeks int) ([]VelocityWeek, error) {
 	cutoff := time.Now().AddDate(0, 0, -weeks*7)
 	rows, err := conn.Query(`
-		SELECT estimate_hours, actual_hours, completed_at
+		SELECT estimate_agent_minutes, actual_hours, completed_at
 		FROM tasks
 		WHERE project_id = ? AND status = 'done' AND completed_at IS NOT NULL
 		ORDER BY completed_at ASC`, projectID)
@@ -37,9 +40,10 @@ func ComputeVelocity(conn *sql.DB, projectID string, weeks int) ([]VelocityWeek,
 	buckets := map[string]*VelocityWeek{}
 	var order []string
 	for rows.Next() {
-		var estH, actH float64
+		var estAgentMin int
+		var actH float64
 		var completedAtStr string
-		if err := rows.Scan(&estH, &actH, &completedAtStr); err != nil {
+		if err := rows.Scan(&estAgentMin, &actH, &completedAtStr); err != nil {
 			return nil, err
 		}
 		completedAt, err := time.Parse(time.RFC3339, completedAtStr)
@@ -58,7 +62,7 @@ func ComputeVelocity(conn *sql.DB, projectID string, weeks int) ([]VelocityWeek,
 			order = append(order, label)
 		}
 		b.Done++
-		b.EstHours += estH
+		b.EstAgentHours += float64(estAgentMin) / 60.0
 		b.ActHours += actH
 	}
 	if err := rows.Err(); err != nil {
@@ -68,8 +72,8 @@ func ComputeVelocity(conn *sql.DB, projectID string, weeks int) ([]VelocityWeek,
 	result := make([]VelocityWeek, 0, len(order))
 	for _, label := range order {
 		b := buckets[label]
-		if b.EstHours > 0 && b.ActHours > 0 {
-			b.Accuracy = math.Min(b.EstHours, b.ActHours) / math.Max(b.EstHours, b.ActHours) * 100
+		if b.EstAgentHours > 0 && b.ActHours > 0 {
+			b.Accuracy = math.Min(b.EstAgentHours, b.ActHours) / math.Max(b.EstAgentHours, b.ActHours) * 100
 		}
 		result = append(result, *b)
 	}
