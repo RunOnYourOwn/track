@@ -84,7 +84,7 @@ func ListProjects(db *sql.DB) ([]models.Project, error) {
 
 	var projects []models.Project
 	for rows.Next() {
-		p, err := scanProjectRows(rows)
+		p, err := scanProject(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -182,14 +182,3 @@ func scanProject(row scanner) (*models.Project, error) {
 	return &p, nil
 }
 
-func scanProjectRows(rows *sql.Rows) (*models.Project, error) {
-	var p models.Project
-	var createdAt, updatedAt string
-	err := rows.Scan(&p.ID, &p.Prefix, &p.Name, &p.Phase, &p.PhaseType, &p.ExternalID, &p.Metadata, &p.WIPLimit, &p.TaskSort, &createdAt, &updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	p.CreatedAt, _ = parseTime(createdAt)
-	p.UpdatedAt, _ = parseTime(updatedAt)
-	return &p, nil
-}

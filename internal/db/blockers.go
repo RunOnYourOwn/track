@@ -67,7 +67,7 @@ func ListBlockers(db *sql.DB, projectID string, openOnly bool) ([]models.Blocker
 
 	var blockers []models.Blocker
 	for rows.Next() {
-		b, err := scanBlockerRows(rows)
+		b, err := scanBlocker(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +81,7 @@ func GetBlocker(db *sql.DB, id string) (*models.Blocker, error) {
 	row := db.QueryRow(`
 		SELECT id, task_id, project_id, title, blocker_type, owner, opened_at, resolved_at, escalation_date, notes
 		FROM blockers WHERE id = ?`, id)
-	return scanBlockerRow(row)
+	return scanBlocker(row)
 }
 
 // --- scanners ---
@@ -112,46 +112,3 @@ func scanBlocker(s blockerScanner) (*models.Blocker, error) {
 	return &b, nil
 }
 
-func scanBlockerRow(row *sql.Row) (*models.Blocker, error) {
-	var b models.Blocker
-	var taskID, resolvedAt, escalationDate sql.NullString
-	var openedAt string
-
-	if err := row.Scan(&b.ID, &taskID, &b.ProjectID, &b.Title, &b.BlockerType, &b.Owner, &openedAt, &resolvedAt, &escalationDate, &b.Notes); err != nil {
-		return nil, err
-	}
-	if taskID.Valid {
-		b.TaskID = &taskID.String
-	}
-	if escalationDate.Valid {
-		b.EscalationDate = &escalationDate.String
-	}
-	b.OpenedAt, _ = parseTime(openedAt)
-	if resolvedAt.Valid {
-		t, _ := parseTime(resolvedAt.String)
-		b.ResolvedAt = &t
-	}
-	return &b, nil
-}
-
-func scanBlockerRows(rows *sql.Rows) (*models.Blocker, error) {
-	var b models.Blocker
-	var taskID, resolvedAt, escalationDate sql.NullString
-	var openedAt string
-
-	if err := rows.Scan(&b.ID, &taskID, &b.ProjectID, &b.Title, &b.BlockerType, &b.Owner, &openedAt, &resolvedAt, &escalationDate, &b.Notes); err != nil {
-		return nil, err
-	}
-	if taskID.Valid {
-		b.TaskID = &taskID.String
-	}
-	if escalationDate.Valid {
-		b.EscalationDate = &escalationDate.String
-	}
-	b.OpenedAt, _ = parseTime(openedAt)
-	if resolvedAt.Valid {
-		t, _ := parseTime(resolvedAt.String)
-		b.ResolvedAt = &t
-	}
-	return &b, nil
-}
