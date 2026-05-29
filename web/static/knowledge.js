@@ -548,9 +548,11 @@ function _openDecisionDetail(d) {
     <div id="kb-modal-err" class="text-danger" style="font-size:12px;min-height:14px;"></div>
     <div class="tt-modal-actions"><span></span><div style="display:flex;gap:8px;">
       <button class="tt-modal-btn" id="kb-cancel">Close</button>
+      <button class="tt-modal-btn" id="kb-edit">Edit</button>
       ${!resolved ? `<button class="tt-modal-btn primary" id="kb-resolve">Resolve</button>` : ''}
     </div></div>`);
   o.querySelector('#kb-cancel').addEventListener('click', _kbCloseModal);
+  o.querySelector('#kb-edit').addEventListener('click', () => _openEditDecision(d));
   const rb = o.querySelector('#kb-resolve');
   if (rb) rb.addEventListener('click', async () => {
     const decision = _kbVal('kb-r-decision');
@@ -577,7 +579,89 @@ function _openLearningDetail(l) {
     ${l.body ? `<div style="white-space:pre-wrap;font-size:13px;line-height:1.5;">${escHtml(l.body)}</div>` : '<div class="text-muted">No body.</div>'}
     ${applies.length ? `<div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:4px;">${applies.map(s => `<span class="badge" style="background:#21262d;color:#8b949e">${escHtml(s)}</span>`).join('')}</div>` : ''}
     <div class="stat-row mt-16"><span class="stat-label">Created</span><span class="stat-value">${fmtDateShort(l.created_at)}</span></div>
-    <div class="tt-modal-actions"><span></span><button class="tt-modal-btn" id="kb-cancel">Close</button></div>`);
+    <div class="tt-modal-actions"><span></span><div style="display:flex;gap:8px;">
+      <button class="tt-modal-btn" id="kb-cancel">Close</button>
+      <button class="tt-modal-btn" id="kb-edit">Edit</button>
+    </div></div>`);
   o.querySelector('#kb-cancel').addEventListener('click', _kbCloseModal);
+  o.querySelector('#kb-edit').addEventListener('click', () => _openEditLearning(l));
+}
+
+function _openEditDecision(d) {
+  let opts = [];
+  try { opts = JSON.parse(d.options || '[]'); } catch (_) { opts = []; }
+  const o = _kbModal(`
+    <h3 style="margin:0 0 16px;font-size:15px;">Edit decision</h3>
+    <div class="tt-modal-field"><label class="tt-modal-label">Title</label>
+      <input class="tt-modal-input" id="kb-ed-title" value="${escHtml(d.title)}"></div>
+    <div class="tt-modal-field"><label class="tt-modal-label">Context</label>
+      <textarea class="tt-modal-textarea" id="kb-ed-context" rows="3">${escHtml(d.context || '')}</textarea></div>
+    <div class="tt-modal-field"><label class="tt-modal-label">Options considered (one per line)</label>
+      <textarea class="tt-modal-textarea" id="kb-ed-options" rows="3">${escHtml((Array.isArray(opts) ? opts : []).map(String).join('\n'))}</textarea></div>
+    <div class="tt-modal-row">
+      <div class="tt-modal-field"><label class="tt-modal-label">Decided by</label>
+        <input class="tt-modal-input" id="kb-ed-decidedby" value="${escHtml(d.decided_by || '')}"></div>
+      <div class="tt-modal-field"><label class="tt-modal-label">Revisit by</label>
+        <input class="tt-modal-input" id="kb-ed-revisit" type="date" value="${escHtml(d.revisit_by || '')}"></div>
+    </div>
+    <div id="kb-modal-err" class="text-danger" style="font-size:12px;min-height:14px;"></div>
+    <div class="tt-modal-actions"><span></span><div style="display:flex;gap:8px;">
+      <button class="tt-modal-btn" id="kb-cancel">Cancel</button>
+      <button class="tt-modal-btn primary" id="kb-save">Save</button>
+    </div></div>`);
+  o.querySelector('#kb-cancel').addEventListener('click', _kbCloseModal);
+  o.querySelector('#kb-save').addEventListener('click', async () => {
+    const title = _kbVal('kb-ed-title');
+    if (!title) { _kbErr('Title is required'); return; }
+    try {
+      await api.patch(`/decisions/${d.id}`, {
+        title,
+        context: _kbVal('kb-ed-context'),
+        options: JSON.stringify(_kbLines(_kbVal('kb-ed-options'))),
+        decided_by: _kbVal('kb-ed-decidedby'),
+        revisit_by: _kbVal('kb-ed-revisit'),
+      });
+      _kbReload();
+    } catch (e) { _kbErr('Failed: ' + (e.message || e)); }
+  });
+}
+
+function _openEditLearning(l) {
+  const applies = (l.applies_to || '')
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map(s => s.replace(/^"|"$/g, '').trim())
+    .filter(Boolean);
+  const o = _kbModal(`
+    <h3 style="margin:0 0 16px;font-size:15px;">Edit learning</h3>
+    <div class="tt-modal-field"><label class="tt-modal-label">Title</label>
+      <input class="tt-modal-input" id="kb-el-title" value="${escHtml(l.title)}"></div>
+    <div class="tt-modal-field"><label class="tt-modal-label">Body</label>
+      <textarea class="tt-modal-textarea" id="kb-el-body" rows="5">${escHtml(l.body || '')}</textarea></div>
+    <div class="tt-modal-row">
+      <div class="tt-modal-field"><label class="tt-modal-label">Category</label>
+        <input class="tt-modal-input" id="kb-el-category" value="${escHtml(l.category || '')}"></div>
+      <div class="tt-modal-field"><label class="tt-modal-label">Applies to (one per line)</label>
+        <textarea class="tt-modal-textarea" id="kb-el-applies" rows="2">${escHtml(applies.join('\n'))}</textarea></div>
+    </div>
+    <div id="kb-modal-err" class="text-danger" style="font-size:12px;min-height:14px;"></div>
+    <div class="tt-modal-actions"><span></span><div style="display:flex;gap:8px;">
+      <button class="tt-modal-btn" id="kb-cancel">Cancel</button>
+      <button class="tt-modal-btn primary" id="kb-save">Save</button>
+    </div></div>`);
+  o.querySelector('#kb-cancel').addEventListener('click', _kbCloseModal);
+  o.querySelector('#kb-save').addEventListener('click', async () => {
+    const title = _kbVal('kb-el-title');
+    if (!title) { _kbErr('Title is required'); return; }
+    try {
+      await api.patch(`/learnings/${l.id}`, {
+        title,
+        body: _kbVal('kb-el-body'),
+        category: _kbVal('kb-el-category'),
+        applies_to: JSON.stringify(_kbLines(_kbVal('kb-el-applies'))),
+      });
+      _kbReload();
+    } catch (e) { _kbErr('Failed: ' + (e.message || e)); }
+  });
 }
 
