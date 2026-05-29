@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/RunOnYourOwn/track/internal/db"
@@ -15,6 +17,8 @@ func init() {
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectCreateCmd)
 	projectCmd.AddCommand(projectDeleteCmd)
+
+	projectDeleteCmd.Flags().Bool("yes", false, "Skip the interactive confirmation prompt (for automation)")
 
 	projectCreateCmd.Flags().String("prefix", "", "Project prefix (3-4 uppercase letters)")
 	projectCreateCmd.Flags().String("name", "", "Project name")
@@ -89,14 +93,33 @@ var projectCreateCmd = &cobra.Command{
 
 var projectDeleteCmd = &cobra.Command{
 	Use:   "delete [prefix]",
-	Short: "Delete a project",
-	Args:  cobra.ExactArgs(1),
+	Short: "Permanently delete a project and ALL its data",
+	Long: "Permanently delete a project and ALL its data — every task, sprint, session, " +
+		"decision, learning, and blocker. This cannot be undone. You will be asked to " +
+		"retype the prefix to confirm unless --yes is given.",
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		conn, _ := db.Open()
 		p, err := db.GetProjectByPrefix(conn, args[0])
 		if err != nil {
 			return fmt.Errorf("project %q not found", args[0])
 		}
+
+		yes, _ := cmd.Flags().GetBool("yes")
+		if !yes {
+			tasks, _ := db.ListTasks(conn, db.ListTaskOpts{ProjectID: p.ID})
+			fmt.Printf("This will PERMANENTLY delete project %s (%s) and all its data", p.Prefix, p.Name)
+			if n := len(tasks); n > 0 {
+				fmt.Printf(", including %d task(s)", n)
+			}
+			fmt.Println(". This cannot be undone.")
+			fmt.Printf("Type %q to confirm: ", p.Prefix)
+			line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			if strings.TrimSpace(line) != p.Prefix {
+				return fmt.Errorf("aborted: confirmation did not match %q", p.Prefix)
+			}
+		}
+
 		if err := db.DeleteProject(conn, p.ID); err != nil {
 			return err
 		}

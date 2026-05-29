@@ -167,6 +167,31 @@ code, .mono {
 }
 .project-card:hover { border-color: var(--accent); transform: translateY(-1px); text-decoration: none; color: var(--text); }
 
+.project-card-wrap { position: relative; }
+.project-card-delete {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+.project-card-wrap:hover .project-card-delete { display: inline-flex; }
+.project-card-delete:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+.tt-modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tt-modal-btn:disabled:hover { border-color: var(--border); }
+
 .project-card-header {
   display: flex;
   align-items: flex-start;

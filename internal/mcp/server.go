@@ -212,6 +212,8 @@ func dispatchTool(conn *sql.DB, raw json.RawMessage) (*ToolCallResult, error) {
 	switch call.Name {
 	case "track_project_list":
 		return handleProjectList(conn, args)
+	case "track_project_delete":
+		return handleProjectDelete(conn, args)
 	case "track_task_list":
 		return handleTaskList(conn, args)
 	case "track_task_create":
@@ -398,6 +400,29 @@ func handleProjectList(conn *sql.DB, _ map[string]any) (*ToolCallResult, error) 
 		return nil, err
 	}
 	return jsonResult(projects), nil
+}
+
+// handleProjectDelete cascades a full project deletion. Because an MCP tool can't
+// prompt the user, it requires the caller to pass `confirm` equal to the prefix —
+// a deliberate echo that guards against an accidental call. The agent must still
+// get the user's go-ahead before invoking this; the check just prevents fat-finger
+// deletions, it is not user consent.
+func handleProjectDelete(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
+	prefix := strArg(args, "prefix")
+	if prefix == "" {
+		return nil, fmt.Errorf("prefix is required")
+	}
+	if strArg(args, "confirm") != prefix {
+		return nil, fmt.Errorf("confirmation required: pass confirm equal to the prefix %q to delete it and ALL its data", prefix)
+	}
+	p, err := db.GetProjectByPrefix(conn, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("project %q not found", prefix)
+	}
+	if err := db.DeleteProject(conn, p.ID); err != nil {
+		return nil, err
+	}
+	return textResult(fmt.Sprintf("deleted project %s and all its data", prefix)), nil
 }
 
 func handleTaskList(conn *sql.DB, args map[string]any) (*ToolCallResult, error) {
@@ -1079,6 +1104,18 @@ func allTools() []Tool {
 			Name:        "track_project_list",
 			Description: "List all projects",
 			InputSchema: InputSchema{Type: "object"},
+		},
+		{
+			Name:        "track_project_delete",
+			Description: "Permanently delete a project and ALL its data (every task, sprint, session, decision, learning, blocker). Irreversible. Confirm with the user first, then pass confirm equal to the prefix.",
+			InputSchema: InputSchema{
+				Type: "object",
+				Properties: map[string]PropertySchema{
+					"prefix":  {Type: "string", Description: "Project prefix to delete"},
+					"confirm": {Type: "string", Description: "Must equal prefix to proceed (guards against accidental deletion)"},
+				},
+				Required: []string{"prefix", "confirm"},
+			},
 		},
 		{
 			Name:        "track_task_list",
