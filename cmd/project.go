@@ -16,7 +16,14 @@ func init() {
 	rootCmd.AddCommand(projectCmd)
 	projectCmd.AddCommand(projectListCmd)
 	projectCmd.AddCommand(projectCreateCmd)
+	projectCmd.AddCommand(projectEditCmd)
 	projectCmd.AddCommand(projectDeleteCmd)
+
+	projectEditCmd.Flags().String("name", "", "Project name")
+	projectEditCmd.Flags().String("phase", "", "Current phase")
+	projectEditCmd.Flags().String("phase-type", "", "Phase type: discovery, design, build, stabilize, maintain")
+	projectEditCmd.Flags().Int("wip-limit", 0, "WIP limit")
+	projectEditCmd.Flags().String("task-sort", "", "Task sort: priority, manual, created, due")
 
 	projectDeleteCmd.Flags().Bool("yes", false, "Skip the interactive confirmation prompt (for automation)")
 
@@ -87,6 +94,70 @@ var projectCreateCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Created project %s (%s) — ID: %s\n", p.Prefix, p.Name, p.ID)
+		return nil
+	},
+}
+
+var projectEditCmd = &cobra.Command{
+	Use:   "edit [prefix]",
+	Short: "Edit project settings (only the flags you pass are changed)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		conn := mustOpen()
+		p, err := db.GetProjectByPrefix(conn, args[0])
+		if err != nil {
+			return fmt.Errorf("project %q not found", args[0])
+		}
+
+		set := func(field, value string) error { return db.UpdateProjectField(conn, p.ID, field, value) }
+		if cmd.Flags().Changed("name") {
+			v, _ := cmd.Flags().GetString("name")
+			if err := set("name", v); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("phase") {
+			v, _ := cmd.Flags().GetString("phase")
+			if err := set("phase", v); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("phase-type") {
+			v, _ := cmd.Flags().GetString("phase-type")
+			if !db.ValidPhaseTypes[v] {
+				return fmt.Errorf("invalid phase-type %q (expected: discovery, design, build, stabilize, maintain)", v)
+			}
+			if err := set("phase_type", v); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("wip-limit") {
+			v, _ := cmd.Flags().GetInt("wip-limit")
+			if v < 1 {
+				return fmt.Errorf("wip-limit must be >= 1")
+			}
+			if err := set("wip_limit", fmt.Sprintf("%d", v)); err != nil {
+				return err
+			}
+		}
+		if cmd.Flags().Changed("task-sort") {
+			v, _ := cmd.Flags().GetString("task-sort")
+			if !db.ValidTaskSorts[v] {
+				return fmt.Errorf("invalid task-sort %q (expected: priority, manual, created, due)", v)
+			}
+			if err := set("task_sort", v); err != nil {
+				return err
+			}
+		}
+
+		updated, err := db.GetProjectByID(conn, p.ID)
+		if err != nil {
+			return err
+		}
+		if jsonOutput {
+			return json.NewEncoder(os.Stdout).Encode(updated)
+		}
+		fmt.Printf("Updated project %s\n", updated.Prefix)
 		return nil
 	},
 }
