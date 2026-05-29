@@ -72,100 +72,91 @@ function _renderTimeline() {
   const epicIds = new Set(epics.map(t => t.id));
   const featureIds = new Set(features.map(t => t.id));
 
-  // Unfiltered groupings for rollup counts: the "Show done" toggle must change
-  // only which rows are displayed, not the completion math (done children still
-  // count toward childCount/doneCount). Built from _tasks, not activeTasks.
-  const allEpicIds = new Set(_tasks.filter(t => t.type === 'epic').map(t => t.id));
-  const allFeatureIds = new Set(_tasks.filter(t => (t.type || 'task') === 'feature').map(t => t.id));
-  const allTasksByFeature = {};
-  const allTasksByEpic = {};
-  const allFeaturesByEpic = {};
+  // Rollup counts span EVERY descendant task (incl. subtasks, and done ones the
+  // "Show done" toggle hides), so a parent's x/y reflects all the work beneath it
+  // regardless of the filter. Built from _tasks (unfiltered).
+  const allChildrenByParent = {};
   _tasks.forEach(t => {
-    const type = t.type || 'task';
-    if (type === 'feature' && t.parent_id && allEpicIds.has(t.parent_id)) {
-      (allFeaturesByEpic[t.parent_id] = allFeaturesByEpic[t.parent_id] || []).push(t);
-    } else if (type === 'task' && t.parent_id) {
-      if (allFeatureIds.has(t.parent_id)) (allTasksByFeature[t.parent_id] = allTasksByFeature[t.parent_id] || []).push(t);
-      else if (allEpicIds.has(t.parent_id)) (allTasksByEpic[t.parent_id] = allTasksByEpic[t.parent_id] || []).push(t);
-    }
+    if (t.parent_id) (allChildrenByParent[t.parent_id] = allChildrenByParent[t.parent_id] || []).push(t);
   });
+  function _descendantTaskStats(id) {
+    let total = 0, done = 0;
+    (allChildrenByParent[id] || []).forEach(c => {
+      if ((c.type || 'task') === 'task') { total++; if (c.status === 'done') done++; }
+      const sub = _descendantTaskStats(c.id);
+      total += sub.total; done += sub.done;
+    });
+    return { total, done };
+  }
 
   // Group features by parent epic
   const featuresByEpic = {};
   const orphanFeatures = [];
   features.forEach(f => {
     if (f.parent_id && epicIds.has(f.parent_id)) {
-      if (!featuresByEpic[f.parent_id]) featuresByEpic[f.parent_id] = [];
-      featuresByEpic[f.parent_id].push(f);
+      (featuresByEpic[f.parent_id] = featuresByEpic[f.parent_id] || []).push(f);
     } else {
       orphanFeatures.push(f);
     }
   });
 
-  // Group tasks by parent feature OR directly by parent epic
+  // Group tasks: under a feature, directly under an epic, under another task
+  // (subtask), or orphaned (no visible parent).
+  const taskIds = new Set(tasks.map(t => t.id));
   const tasksByFeature = {};
   const tasksByEpic = {};
+  const tasksByParentTask = {};
   const orphanTasks = [];
   tasks.forEach(t => {
     if (t.parent_id && featureIds.has(t.parent_id)) {
-      if (!tasksByFeature[t.parent_id]) tasksByFeature[t.parent_id] = [];
-      tasksByFeature[t.parent_id].push(t);
+      (tasksByFeature[t.parent_id] = tasksByFeature[t.parent_id] || []).push(t);
     } else if (t.parent_id && epicIds.has(t.parent_id)) {
-      if (!tasksByEpic[t.parent_id]) tasksByEpic[t.parent_id] = [];
-      tasksByEpic[t.parent_id].push(t);
+      (tasksByEpic[t.parent_id] = tasksByEpic[t.parent_id] || []).push(t);
+    } else if (t.parent_id && taskIds.has(t.parent_id)) {
+      (tasksByParentTask[t.parent_id] = tasksByParentTask[t.parent_id] || []).push(t);
     } else {
       orphanTasks.push(t);
     }
   });
-  Object.values(tasksByFeature).forEach(arr => arr.sort(_sortByPriority));
-  Object.values(tasksByEpic).forEach(arr => arr.sort(_sortByPriority));
+  [tasksByFeature, tasksByEpic, tasksByParentTask].forEach(m => Object.values(m).forEach(arr => arr.sort(_sortByPriority)));
   orphanTasks.sort(_sortByPriority);
 
-  // Build visible rows with 3-level nesting
+  // Build visible rows
   const rows = [];
 
+  // A task and its subtasks (any depth), indented under it.
+  function _addTaskRow(task, indent) {
+    rows.push({ type: 'task', task, indent });
+    (tasksByParentTask[task.id] || []).forEach(sub => _addTaskRow(sub, indent + 1));
+  }
+
   function _addFeatureRow(feat, indent) {
-    const children = (tasksByFeature[feat.id] || []);          // filtered → visible rows
-    const allChildren = (allTasksByFeature[feat.id] || []);    // full → rollup counts
-    const doneCount = allChildren.filter(t => t.status === 'done').length;
-    rows.push({ type: 'feature', task: feat, childCount: allChildren.length, doneCount, indent });
+    const stats = _descendantTaskStats(feat.id);
+    rows.push({ type: 'feature', task: feat, childCount: stats.total, doneCount: stats.done, indent });
     if (_expandedFeatures[feat.id]) {
-      children.forEach(child => {
-        rows.push({ type: 'task', task: child, indent: indent + 1 });
-      });
+      (tasksByFeature[feat.id] || []).forEach(child => _addTaskRow(child, indent + 1));
     }
   }
 
   // Epics with their features and tasks
   // Non-done epics default to expanded (user can collapse); done epics default to collapsed
   epics.forEach(epic => {
-    const epicFeatures = (featuresByEpic[epic.id] || []);   // filtered → visible rows
-    const epicDirectTasks = (tasksByEpic[epic.id] || []);   // filtered → visible rows
-    // Rollup counts span every descendant, including done ones hidden by the filter.
-    const allDescendants = [
-      ...(allFeaturesByEpic[epic.id] || []).flatMap(f => allTasksByFeature[f.id] || []),
-      ...(allTasksByEpic[epic.id] || []),
-    ];
-    const doneCount = allDescendants.filter(t => t.status === 'done').length;
-    rows.push({ type: 'epic', task: epic, childCount: allDescendants.length, doneCount, indent: 0 });
+    const stats = _descendantTaskStats(epic.id);
+    rows.push({ type: 'epic', task: epic, childCount: stats.total, doneCount: stats.done, indent: 0 });
     const isExpanded = _expandedEpics[epic.id] !== undefined
       ? _expandedEpics[epic.id]
       : epic.status !== 'done';
     if (isExpanded) {
-      epicFeatures.forEach(feat => _addFeatureRow(feat, 1));
-      epicDirectTasks.forEach(t => {
-        rows.push({ type: 'task', task: t, indent: 1 });
-      });
+      (featuresByEpic[epic.id] || []).forEach(feat => _addFeatureRow(feat, 1));
+      (tasksByEpic[epic.id] || []).forEach(t => _addTaskRow(t, 1));
     }
   });
 
   // Orphan features (not under any epic)
   orphanFeatures.forEach(feat => _addFeatureRow(feat, 0));
 
-  // Orphan tasks (not under any feature)
-  orphanTasks.forEach(t => {
-    rows.push({ type: 'task', task: t, indent: 0 });
-  });
+  // Orphan tasks (no visible parent)
+  orphanTasks.forEach(t => _addTaskRow(t, 0));
 
   // Determine time range — keep it tight around actual data
   const allDates = _tasks.map(t => new Date(t.created_at));
