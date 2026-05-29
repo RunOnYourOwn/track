@@ -60,6 +60,17 @@ func ComputeInsights(db *sql.DB, days int) ([]ProjectInsights, error) {
 		return nil, err
 	}
 
+	// One query for every task, grouped by project — avoids a ListTasks per
+	// project (the old N+1).
+	allTasks, err := ListTasks(db, ListTaskOpts{})
+	if err != nil {
+		return nil, err
+	}
+	tasksByProject := make(map[string][]models.Task, len(projects))
+	for _, t := range allTasks {
+		tasksByProject[t.ProjectID] = append(tasksByProject[t.ProjectID], t)
+	}
+
 	var cutoff time.Time
 	if days > 0 {
 		cutoff = time.Now().Add(-time.Duration(days) * 24 * time.Hour)
@@ -68,14 +79,11 @@ func ComputeInsights(db *sql.DB, days int) ([]ProjectInsights, error) {
 	out := make([]ProjectInsights, 0, len(projects))
 	for i := range projects {
 		p := &projects[i]
-		allTasks, err := ListTasks(db, ListTaskOpts{ProjectID: p.ID})
-		if err != nil {
-			return nil, err
-		}
 		// Cancelled work is descoped — exclude it from every insight metric
 		// (throughput, cycle time, accuracy, distribution, WIP).
-		tasks := allTasks[:0:0]
-		for _, t := range allTasks {
+		projectTasks := tasksByProject[p.ID]
+		tasks := make([]models.Task, 0, len(projectTasks))
+		for _, t := range projectTasks {
 			if t.Status != "cancelled" {
 				tasks = append(tasks, t)
 			}
