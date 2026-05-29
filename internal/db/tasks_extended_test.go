@@ -1,8 +1,17 @@
 package db
 
 import (
+	"database/sql"
+	"errors"
 	"testing"
 )
+
+func TestDeleteTaskNotFound(t *testing.T) {
+	db := testDB(t)
+	if err := DeleteTask(db, "nonexistent-id"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("delete missing task: got %v, want sql.ErrNoRows", err)
+	}
+}
 
 func TestGetTaskByDisplayID(t *testing.T) {
 	db := testDB(t)

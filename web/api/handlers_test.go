@@ -136,6 +136,20 @@ func TestTaskCreateValidationHTTP(t *testing.T) {
 		t.Fatalf("get unknown task: got %d, want 404", resp.StatusCode)
 	}
 	resp.Body.Close()
+
+	// delete unknown task → 404 (not a phantom 200)
+	resp = doJSON(t, "DELETE", srv.URL+"/api/tasks/NOSUCHID", "")
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("delete unknown task: got %d, want 404", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	// delete the real task → 200
+	resp = doJSON(t, "DELETE", srv.URL+"/api/tasks/"+task.ID, "")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("delete task: got %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
 }
 
 // An invalid project prefix is a client error → 400 (not a 500), while a valid
