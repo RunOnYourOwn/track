@@ -44,12 +44,14 @@ func TestComputeGraph(t *testing.T) {
 		crit[n.ID] = n.Critical
 	}
 
-	// Layer = hierarchy depth.
-	if lay[epic] != 0 || lay[feat] != 1 || lay[a] != 2 || lay[b] != 2 || lay[c] != 2 {
-		t.Fatalf("hierarchy depth wrong: epic=%d feat=%d a=%d b=%d c=%d", lay[epic], lay[feat], lay[a], lay[b], lay[c])
+	// Layer = longest path over contains AND blocks edges. Epic→feat→A by
+	// hierarchy (0,1,2); B and C are pushed right of their blockers (A blocks B,
+	// B blocks C) rather than sharing A's column, so the chain flows left→right.
+	if lay[epic] != 0 || lay[feat] != 1 || lay[a] != 2 || lay[b] != 3 || lay[c] != 4 {
+		t.Fatalf("combined layer wrong: epic=%d feat=%d a=%d b=%d c=%d (want 0,1,2,3,4)", lay[epic], lay[feat], lay[a], lay[b], lay[c])
 	}
-	if g.MaxLayer != 2 {
-		t.Fatalf("max layer: got %d want 2", g.MaxLayer)
+	if g.MaxLayer != 4 {
+		t.Fatalf("max layer: got %d want 4", g.MaxLayer)
 	}
 
 	// Edges: 4 contains (epic→feat, feat→a, feat→b, feat→c) + 2 blocks (a→b, b→c).
