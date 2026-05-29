@@ -126,12 +126,12 @@ var openTaskModal = (function () {
         </div>
         <div class="tt-modal-row">
           <div class="tt-modal-field">
-            <label class="tt-modal-label">Start Date</label>
-            <input class="tt-modal-input" id="detail-start" type="date" value="${t.start_date || ''}">
+            <label class="tt-modal-label">Start Date${(t.type === 'epic' || t.type === 'feature') ? ' <span class="text-muted" style="font-weight:400">(derived from tasks)</span>' : ''}</label>
+            <input class="tt-modal-input" id="detail-start" type="date" value="${t.start_date || ''}" ${(t.type === 'epic' || t.type === 'feature') ? 'disabled' : ''}>
           </div>
           <div class="tt-modal-field">
-            <label class="tt-modal-label">Due Date</label>
-            <input class="tt-modal-input" id="detail-due" type="date" value="${t.due_date || ''}">
+            <label class="tt-modal-label">Due Date${(t.type === 'epic' || t.type === 'feature') ? ' <span class="text-muted" style="font-weight:400">(derived)</span>' : ''}</label>
+            <input class="tt-modal-input" id="detail-due" type="date" value="${t.due_date || ''}" ${(t.type === 'epic' || t.type === 'feature') ? 'disabled' : ''}>
           </div>
           <div class="tt-modal-field">
             <label class="tt-modal-label">Tags</label>
