@@ -92,6 +92,9 @@ var adoPushCmd = &cobra.Command{
 
 		fmt.Printf("\nPush complete: %d pushed, %d skipped, %d failed\n",
 			stats.Pushed, stats.Skipped, stats.Failed)
+		if stats.Failed > 0 {
+			return fmt.Errorf("%d item(s) failed to push — see warnings above", stats.Failed)
+		}
 		return nil
 	},
 }

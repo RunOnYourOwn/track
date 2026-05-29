@@ -51,20 +51,20 @@ type InitializeResult struct {
 }
 
 type Tool struct {
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
 	InputSchema InputSchema `json:"inputSchema"`
 }
 
 type InputSchema struct {
-	Type       string                     `json:"type"`
-	Properties map[string]PropertySchema  `json:"properties,omitempty"`
-	Required   []string                   `json:"required,omitempty"`
+	Type       string                    `json:"type"`
+	Properties map[string]PropertySchema `json:"properties,omitempty"`
+	Required   []string                  `json:"required,omitempty"`
 }
 
 type PropertySchema struct {
-	Type        string   `json:"type,omitempty"`
-	Description string   `json:"description,omitempty"`
+	Type        string      `json:"type,omitempty"`
+	Description string      `json:"description,omitempty"`
 	Items       *ItemSchema `json:"items,omitempty"`
 }
 
@@ -113,7 +113,7 @@ func Run() error {
 			continue
 		}
 
-		resp := handleRequest(conn, req)
+		resp := safeHandleRequest(conn, req)
 		// Notifications have no ID and no response needed (ID is nil and method starts with "notifications/")
 		if resp == nil {
 			continue
@@ -127,6 +127,27 @@ func Run() error {
 		return err
 	}
 	return nil
+}
+
+// safeHandleRequest runs handleRequest with panic recovery, so a panic in any
+// single tool handler returns a JSON-RPC internal error instead of crashing the
+// whole stdio session (which would silently kill the connected agent).
+func safeHandleRequest(conn *sql.DB, req Request) (resp *Response) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "mcp: recovered from panic handling %q: %v\n", req.Method, r)
+			if req.ID == nil { // notification — no response expected
+				resp = nil
+				return
+			}
+			resp = &Response{
+				JSONRPC: "2.0",
+				ID:      req.ID,
+				Error:   &Error{Code: -32603, Message: fmt.Sprintf("internal error: %v", r)},
+			}
+		}
+	}()
+	return handleRequest(conn, req)
 }
 
 func handleRequest(conn *sql.DB, req Request) *Response {
@@ -570,13 +591,13 @@ func handleTaskUpdate(conn *sql.DB, args map[string]any) (*ToolCallResult, error
 	}
 
 	fields := map[string]string{
-		"title":                  strArg(args, "title"),
-		"description":           strArg(args, "description"),
-		"type":                  strArg(args, "type"),
-		"priority":              strArg(args, "priority"),
-		"estimate_size":         strArg(args, "estimate_size"),
-		"due_date":              strArg(args, "due_date"),
-		"tags":                  strArg(args, "tags"),
+		"title":         strArg(args, "title"),
+		"description":   strArg(args, "description"),
+		"type":          strArg(args, "type"),
+		"priority":      strArg(args, "priority"),
+		"estimate_size": strArg(args, "estimate_size"),
+		"due_date":      strArg(args, "due_date"),
+		"tags":          strArg(args, "tags"),
 	}
 
 	if v := floatArg(args, "estimate_hours"); v > 0 {
