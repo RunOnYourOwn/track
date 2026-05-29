@@ -559,9 +559,9 @@ function _openGraphDetail(task, prefix, edges, taskById) {
     </div>
     <h3 class="graph-detail-title">${escHtml(task.title)}</h3>
     <div class="graph-detail-badges">
-      <span class="priority-badge ${task.priority}">${task.priority}</span>
-      <span class="status-badge ${task.status}">${task.status.replace(/_/g, ' ')}</span>
-      ${task.type && task.type !== 'task' ? `<span class="type-badge type-${task.type}">${task.type}</span>` : ''}
+      ${priorityBadge(task.priority)}
+      ${statusBadge(task.status)}
+      ${task.type && task.type !== 'task' ? `<span class="type-badge type-${escHtml(task.type)}">${escHtml(task.type)}</span>` : ''}
     </div>
     ${task.description ? `<p class="graph-detail-desc">${escHtml(task.description)}</p>` : ''}
     ${parentLabel ? `<div class="graph-detail-row"><span class="graph-detail-label">Feature</span><span class="graph-detail-value">${escHtml(parentLabel)}</span></div>` : ''}
