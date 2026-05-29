@@ -253,6 +253,7 @@ code, .mono {
 .status-badge.done { border-color: var(--success); color: var(--success); }
 .status-badge.blocked { border-color: var(--danger); color: var(--danger); }
 .status-badge.waiting { border-color: var(--warning); color: var(--warning); }
+.status-badge.cancelled { border-color: var(--border); color: var(--muted); text-decoration: line-through; }
 
 .priority-badge { font-size: 10px; }
 .priority-badge.urgent { background: rgba(248,81,73,0.1); border-color: var(--danger); color: var(--danger); }
@@ -501,6 +502,8 @@ code, .mono {
 .stale-indicator { color: var(--warning); font-size: 10px; }
 .blocked-indicator { color: var(--danger); font-size: 10px; margin-left: 4px; }
 .task-card.task-blocked { border-left: 2px solid var(--danger); }
+.task-card.task-cancelled { opacity: 0.55; }
+.task-card.task-cancelled .task-card-title { text-decoration: line-through; }
 .wip-label { color: var(--warning); font-size: 10px; font-weight: 600; }
 .wip-limit-display {
   cursor: pointer;

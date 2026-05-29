@@ -140,6 +140,7 @@ function _drawGraph() {
     todo:              { bg: '#1c1c1c', border: '#484f58', text: '#8b949e', label: 'To Do' },
     in_progress:       { bg: '#0d2240', border: '#58a6ff', text: '#58a6ff', label: 'In Progress' },
     done:              { bg: '#0d2d1a', border: '#3fb950', text: '#3fb950', label: 'Done' },
+    cancelled:         { bg: '#161616', border: '#484f58', text: '#6e7681', label: 'Cancelled' },
     waiting_external:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },
     waiting_decision:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },
     waiting_feedback:  { bg: '#2d1f00', border: '#d29922', text: '#d29922', label: 'Waiting' },

@@ -83,7 +83,7 @@ function _drawTable() {
 }
 
 function _buildRows() {
-  const visible = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done');
+  const visible = _showDone ? _tasks : _tasks.filter(t => t.status !== 'done' && t.status !== 'cancelled');
   const byId = {};
   visible.forEach(t => { byId[t.id] = { ...t, children: [] }; });
 

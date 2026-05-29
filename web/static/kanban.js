@@ -26,7 +26,7 @@ const COLUMN_DROP_STATUS = {
 // (waiting_review/_external/_dependency/...) lands in Waiting, and any unknown
 // status falls back to Backlog — so no task can silently vanish from the board.
 function _columnIdForStatus(status) {
-  if (status === 'done') return 'done';
+  if (status === 'done' || status === 'cancelled') return 'done'; // 'closed' column
   if (status === 'in_progress') return 'in_progress';
   if (isWaiting(status)) return 'waiting';
   return 'todo';
@@ -39,6 +39,7 @@ let _prefix = '';
 let _project = null;
 let _tasks   = [];
 let _filters = { priorities: [], sourceTypes: [], blockedOnly: false };
+let _showCancelled = false;
 let _dragTaskId   = null;
 let _dragFromCol  = null;
 let _collapsedColumns = new Set(['done']);
@@ -138,6 +139,7 @@ function _filterBar() {
     .join('');
 
   const blockedCount = _tasks.filter(t => t.blocked).length;
+  const cancelledCount = _tasks.filter(t => t.status === 'cancelled').length;
 
   return `
     <div class="filter-bar">
@@ -155,6 +157,12 @@ function _filterBar() {
           <span class="text-danger">Blocked (${blockedCount})</span>
         </label>
       ` : ''}
+      ${cancelledCount > 0 ? `
+        <label class="filter-checkbox filter-sep">
+          <input type="checkbox" id="filter-cancelled" ${_showCancelled ? 'checked' : ''}>
+          <span class="text-muted">Show cancelled (${cancelledCount})</span>
+        </label>
+      ` : ''}
       <button id="filter-clear" class="btn-ghost btn-sm">Clear</button>
     </div>
   `;
@@ -163,7 +171,8 @@ function _filterBar() {
 function _renderColumn(col, tasks) {
   // Every leaf task (any nesting depth) is a card, placed by its OWN status.
   const colTasks = tasks
-    .filter(t => (t.type || 'task') === 'task' && _columnIdForStatus(t.status) === col.id)
+    .filter(t => (t.type || 'task') === 'task' && _columnIdForStatus(t.status) === col.id
+      && (_showCancelled || t.status !== 'cancelled')) // cancelled hidden unless toggled
     .sort(byPriority);
 
   const isInProgress = col.id === 'in_progress';
@@ -217,7 +226,7 @@ function _renderTaskCard(task) {
     : '';
 
   return `
-    <div class="task-card ${task.blocked ? 'task-blocked' : ''}"
+    <div class="task-card ${task.blocked ? 'task-blocked' : ''} ${task.status === 'cancelled' ? 'task-cancelled' : ''}"
          draggable="true"
          data-task-id="${task.id}"
          data-task-seq="${task.seq}"
@@ -263,6 +272,14 @@ function _attachBoardListeners() {
   if (blockedCb) {
     blockedCb.addEventListener('change', () => {
       _filters.blockedOnly = blockedCb.checked;
+      _drawBoard();
+    });
+  }
+
+  const cancelledCb = document.getElementById('filter-cancelled');
+  if (cancelledCb) {
+    cancelledCb.addEventListener('change', () => {
+      _showCancelled = cancelledCb.checked;
       _drawBoard();
     });
   }
