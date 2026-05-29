@@ -216,8 +216,9 @@ func (h *handler) getProject(w http.ResponseWriter, r *http.Request) {
 type updateProjectRequest struct {
 	WIPLimit *int `json:"wip_limit"`
 	// Pointer so an explicit "" can clear the phase (omitted = leave unchanged).
-	Phase *string `json:"phase"`
-	Name  string  `json:"name"`
+	Phase    *string `json:"phase"`
+	Name     string  `json:"name"`
+	TaskSort *string `json:"task_sort"`
 }
 
 func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
@@ -252,6 +253,16 @@ func (h *handler) updateProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Name != "" {
 		if err := db.UpdateProjectField(h.conn, p.ID, "name", req.Name); err != nil {
+			writeServerError(w, err)
+			return
+		}
+	}
+	if req.TaskSort != nil {
+		if !db.ValidTaskSorts[*req.TaskSort] {
+			writeError(w, http.StatusBadRequest, "invalid task_sort (expected: priority, manual, created, due)")
+			return
+		}
+		if err := db.UpdateProjectField(h.conn, p.ID, "task_sort", *req.TaskSort); err != nil {
 			writeServerError(w, err)
 			return
 		}
