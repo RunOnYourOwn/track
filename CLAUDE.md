@@ -12,6 +12,12 @@ CLI + web UI for local project management. Single Go binary, SQLite database, no
   `make install` runs `go install` into `~/bin` (via `GOBIN`; not `cp`, which on
   Apple Silicon macOS breaks the binary's ad-hoc signature). (No `bin/` dir and no
   `make release` target.)
+- Versioning/releases: semver tags `vX.Y.Z`. The version lives in
+  `internal/version` (stamped via ldflags = `git describe`, with a build-info
+  fallback for `go install …@vX.Y.Z`) and is surfaced by `track --version`, the MCP
+  serverInfo, and `GET /api/meta` (the web-UI footer). Pushing a `v*` tag triggers
+  `.github/workflows/release.yml`, which cross-compiles linux+darwin (arm64/amd64,
+  pure-Go/no CGO) and publishes a GitHub Release with binaries + checksums.
 
 ### Running the local server (read this before debugging "the UI looks wrong")
 

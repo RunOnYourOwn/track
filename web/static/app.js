@@ -171,6 +171,10 @@ async function loadMeta() {
       _validPriorities.clear();
       m.priorities.forEach((p, i) => { PRIORITY_ORDER[p] = i; _validPriorities.add(p); });
     }
+    if (m.version) {
+      const el = document.getElementById('app-version');
+      if (el) el.textContent = m.version;
+    }
   } catch (_) { /* keep the literal fallback */ }
 }
 

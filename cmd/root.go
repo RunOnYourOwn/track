@@ -5,12 +5,14 @@ import (
 	"os"
 
 	"github.com/RunOnYourOwn/track/internal/db"
+	"github.com/RunOnYourOwn/track/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "track",
-	Short: "Local project hub for AI-assisted development",
+	Use:     "track",
+	Short:   "Local project hub for AI-assisted development",
+	Version: version.String(), // enables `track --version`
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		name := cmd.Name()
 		if name == "help" || name == "completion" || name == "track" {
