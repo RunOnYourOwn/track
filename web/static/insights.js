@@ -261,8 +261,14 @@ function buildWIPDots(current, limit, color) {
   if (limit === 0) {
     return `<span style="color:#8b949e;font-size:12px">${current} in progress</span>`;
   }
-  const dots = [];
   const max = Math.max(current, limit);
+  // Dots stay readable only for small limits; past ~10 the row would overflow the
+  // card, so switch to a proportional bar (over-limit fills fully in red).
+  if (max > 10) {
+    const pct = Math.min(100, Math.round((current / limit) * 100));
+    return `<div class="wip-bar"><div class="wip-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+  }
+  const dots = [];
   for (let i = 0; i < max; i++) {
     const filled = i < current;
     const overLimit = i >= limit;
