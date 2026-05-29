@@ -16,11 +16,66 @@ func TestRollupParentDatesCycleSafe(t *testing.T) {
 		{ID: "B", ParentID: &aID, CreatedAt: time.Now()},
 	}
 	done := make(chan struct{})
-	go func() { rollupParentDates(tasks); close(done) }()
+	go func() { rollupParentDerived(tasks); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("rollupParentDates did not terminate on a parent_id cycle")
+		t.Fatal("rollupParentDerived did not terminate on a parent_id cycle")
+	}
+}
+
+// Epic/feature estimates are the sum of descendant task estimates (hours +
+// agent-minutes), derived on a full-project ListTasks; a childless parent keeps
+// its own value but rejects a manual set once it has descendants.
+func TestRollupParentEstimates(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "EST")
+
+	mk := func(title, typ, parent string, hours float64, agentMin int) string {
+		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: typ, ParentID: parent, EstimateHours: hours, EstimateAgentMinutes: agentMin})
+		if err != nil {
+			t.Fatalf("create %s: %v", title, err)
+		}
+		return tk.ID
+	}
+	epic := mk("Epic", "epic", "", 0, 0)
+	feat := mk("Feature", "feature", epic, 0, 0)
+	mk("T1", "task", feat, 2, 30)
+	mk("T2", "task", feat, 3, 45)
+
+	tasks, err := ListTasks(d, ListTaskOpts{ProjectID: pid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]models.Task{}
+	for _, tk := range tasks {
+		byID[tk.ID] = tk
+	}
+	for _, id := range []string{epic, feat} {
+		if got := byID[id].EstimateHours; got != 5 {
+			t.Fatalf("%s estimate_hours: got %v want 5", id, got)
+		}
+		if got := byID[id].EstimateAgentMinutes; got != 75 {
+			t.Fatalf("%s estimate_agent_minutes: got %v want 75", id, got)
+		}
+	}
+}
+
+func TestParentEstimateWriteGuard(t *testing.T) {
+	d := OpenTestDB(t)
+	pid := mkTestProject(t, d, "PEG")
+	epic, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "E", Type: "epic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateTaskField(d, epic.ID, "estimate_hours", "8"); err != nil {
+		t.Fatalf("childless epic estimate_hours should be allowed: %v", err)
+	}
+	if _, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t", Type: "task", ParentID: epic.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdateTaskField(d, epic.ID, "estimate_hours", "9"); err == nil {
+		t.Fatal("epic with children should reject a manual estimate_hours")
 	}
 }
 
