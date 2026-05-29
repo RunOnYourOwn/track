@@ -34,11 +34,11 @@ var statusToState = map[string]string{
 
 var typeMapping = map[string]string{
 	"Epic":                 "epic",
-	"Feature":             "feature",
+	"Feature":              "feature",
 	"Product Backlog Item": "feature",
-	"Bug":                 "task",
-	"Task":                "task",
-	"User Story":          "feature",
+	"Bug":                  "task",
+	"Task":                 "task",
+	"User Story":           "feature",
 }
 
 func MapStateToStatus(adoState string) string {

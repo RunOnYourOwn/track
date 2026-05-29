@@ -127,7 +127,6 @@ var blockerResolveCmd = &cobra.Command{
 	},
 }
 
-
 var blockerListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List blockers for a project",

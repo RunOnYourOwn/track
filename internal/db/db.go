@@ -154,6 +154,16 @@ var orderedMigrations = []migration{
 }
 
 func runMigrations(db *sql.DB, migrations []migration) error {
+	// Versions must strictly increase. The loop below skips any migration with
+	// version <= the highest applied, so a duplicate or out-of-order entry would
+	// be silently lost — catch that mis-numbering here instead.
+	for i := 1; i < len(migrations); i++ {
+		if migrations[i].version <= migrations[i-1].version {
+			return fmt.Errorf("migrations out of order: version %d follows %d (versions must strictly increase)",
+				migrations[i].version, migrations[i-1].version)
+		}
+	}
+
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		version    INTEGER PRIMARY KEY,
 		name       TEXT NOT NULL,

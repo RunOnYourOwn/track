@@ -467,12 +467,12 @@ type updateTaskRequest struct {
 	Title       string  `json:"title"`
 	Priority    string  `json:"priority"`
 	// Pointers so an explicit "" can clear the value (omitted = leave unchanged).
-	StartDate        *string `json:"start_date"`
-	DueDate          *string `json:"due_date"`
-	CompletionNote   *string `json:"completion_note"`
-	Description  string `json:"description"`
-	Type         string `json:"type"`
-	EstimateSize string `json:"estimate_size"`
+	StartDate      *string `json:"start_date"`
+	DueDate        *string `json:"due_date"`
+	CompletionNote *string `json:"completion_note"`
+	Description    string  `json:"description"`
+	Type           string  `json:"type"`
+	EstimateSize   string  `json:"estimate_size"`
 	// Pointers so an explicit 0 can clear the estimate / reset the order
 	// (omitted = leave unchanged); a plain value can't distinguish the two.
 	EstimateHours    *float64 `json:"estimate_hours"`
