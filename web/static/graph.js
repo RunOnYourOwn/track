@@ -113,7 +113,7 @@ function _drawGraph() {
   // Layout parameters
   const NODE_W = 220;
   const NODE_H = 58;
-  const LAYER_GAP = 80;
+  const LAYER_GAP = 110;
   const NODE_GAP = 14;
   const PAD_X = 40;
   const PAD_Y = 40;
@@ -249,7 +249,7 @@ function _drawGraph() {
       edgeG.append('path')
         .attr('d', path)
         .attr('fill', 'none')
-        .attr('stroke', '#56606b')
+        .attr('stroke', '#6e7681')
         .attr('stroke-width', 1.5)
         .attr('class', `edge-${e.from_task_id} edge-${e.to_task_id}`)
         .style('opacity', 0.7);
@@ -270,6 +270,9 @@ function _drawGraph() {
 
   // Draw nodes
   const nodeG = zoomLayer.append('g');
+  // Overlay layer for hover: connected edges are re-drawn here, ABOVE the cards,
+  // so they're never occluded (cards are opaque and paint over the base edges).
+  const overlayG = zoomLayer.append('g');
 
   connectedTasks.forEach(t => {
     const p = pos.get(t.id);
@@ -341,10 +344,10 @@ function _drawGraph() {
 
     // Hover highlight
     g.on('mouseenter', function() {
-      _highlightConnected(t.id, validEdges, connectedTasks, nodeG, edgeG);
+      _highlightConnected(t.id, validEdges, connectedTasks, nodeG, edgeG, overlayG);
     })
     .on('mouseleave', function() {
-      _resetHighlight(nodeG, edgeG);
+      _resetHighlight(nodeG, edgeG, overlayG);
     })
     .on('click', function(event) {
       event.stopPropagation();
@@ -360,7 +363,7 @@ function _drawGraph() {
     { label: 'In Progress', color: '#58a6ff' },
     { label: 'Done', color: '#3fb950' },
     { label: 'Waiting', color: '#d29922' },
-    { label: 'Contains', color: '#56606b', line: true },
+    { label: 'Contains', color: '#6e7681', line: true },
     { label: 'Blocks', color: '#58a6ff', line: true },
     { label: 'Critical Path', color: '#f85149', line: true },
   ];
@@ -459,7 +462,7 @@ function _closeGraphDetail() {
   if (panel) panel.remove();
 }
 
-function _highlightConnected(nodeId, edges, tasks, nodeG, edgeG) {
+function _highlightConnected(nodeId, edges, tasks, nodeG, edgeG, overlayG) {
   const connected = new Set([nodeId]);
   // Walk upstream
   function walkUp(id) {
@@ -485,15 +488,29 @@ function _highlightConnected(nodeId, edges, tasks, nodeG, edgeG) {
   nodeG.selectAll('g').style('opacity', function() {
     return connected.has(this.getAttribute('data-id')) ? 1 : 0.2;
   });
+  // Dim base edges; re-draw the connected ones bright + thicker in the overlay
+  // layer so they render ABOVE the (opaque) cards instead of hidden behind them.
+  if (overlayG) overlayG.selectAll('*').remove();
   edgeG.selectAll('path').style('opacity', function() {
     const classes = this.getAttribute('class') || '';
-    return Array.from(connected).some(id => classes.includes(`edge-${id}`)) ? 1 : 0.08;
+    const isConnected = Array.from(connected).some(id => classes.includes(`edge-${id}`));
+    if (isConnected && overlayG) {
+      overlayG.append('path')
+        .attr('d', this.getAttribute('d'))
+        .attr('fill', 'none')
+        .attr('stroke', this.getAttribute('stroke'))
+        .attr('stroke-width', (parseFloat(this.getAttribute('stroke-width')) || 1.5) + 1.25)
+        .attr('marker-end', this.getAttribute('marker-end') || null)
+        .style('opacity', 1);
+    }
+    return isConnected ? 0.25 : 0.05;
   });
 }
 
-function _resetHighlight(nodeG, edgeG) {
+function _resetHighlight(nodeG, edgeG, overlayG) {
   nodeG.selectAll('g').style('opacity', 1);
   edgeG.selectAll('path').style('opacity', 1);
+  if (overlayG) overlayG.selectAll('*').remove();
 }
 
 return renderGraph;
