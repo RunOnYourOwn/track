@@ -7,6 +7,28 @@ publishes the section for each tagged version as that GitHub Release's notes.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-05-29
+
+### Added
+- Task creation accepts `estimate_agent_minutes` over HTTP and MCP (was CLI-only);
+  it feeds estimation accuracy and the parent estimate rollup.
+
+### Changed
+- Dashboard: responsive 3-up card grid, phase_type-colored badges (always shown),
+  bottom-aligned status chips, and equal-height cards.
+- Insights: fixed the Throughput long-name overflow and aligned every bar to a
+  fixed-width label column.
+- MCP `track_task_update` can now clear string fields / zero numeric fields
+  (presence-based), matching the HTTP and CLI behavior.
+- Synced the timeline and kanban status vocabularies to the canonical set; the
+  timeline now shows a "nothing to show" message instead of an empty chart.
+- Release workflow pins Go via `go.mod` and drops the empty `body_path` fallback;
+  MCP/CLI/doc status enums list all eight statuses.
+
+### Fixed
+- timeline.js painted blocked / waiting_review / waiting_dependency tasks with the
+  To-Do color (the status-vocab fix had only reached the dependency graph).
+
 ## [0.1.1] - 2026-05-29
 
 Release tooling and documentation only — the `track` binary is unchanged from
@@ -42,6 +64,7 @@ external services) for managing AI-assisted development.
   that cross-compiles linux + darwin (amd64/arm64) and publishes binaries +
   checksums.
 
-[Unreleased]: https://github.com/RunOnYourOwn/track/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/RunOnYourOwn/track/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/RunOnYourOwn/track/releases/tag/v0.1.2
 [0.1.1]: https://github.com/RunOnYourOwn/track/releases/tag/v0.1.1
 [0.1.0]: https://github.com/RunOnYourOwn/track/releases/tag/v0.1.0
