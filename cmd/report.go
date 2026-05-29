@@ -256,21 +256,21 @@ var velocityCmd = &cobra.Command{
 		}
 
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "WEEK\tDONE\tHOURS(est)\tHOURS(act)\tACCURACY")
+		fmt.Fprintln(w, "WEEK\tDONE\tAGENT-EST(h)\tACTUAL(h)\tACCURACY")
 		var totalDone int
 		var totalEst, totalAct, totalAcc float64
 		var accCount int
 		for _, b := range result {
 			accStr := "—"
-			if b.EstHours > 0 && b.ActHours > 0 {
+			if b.EstAgentHours > 0 && b.ActHours > 0 {
 				accStr = fmt.Sprintf("%.0f%%", b.Accuracy)
 				totalAcc += b.Accuracy
 				accCount++
 			}
 			fmt.Fprintf(w, "%s\t%d\t%.1f\t%.1f\t%s\n",
-				b.Label, b.Done, b.EstHours, b.ActHours, accStr)
+				b.Label, b.Done, b.EstAgentHours, b.ActHours, accStr)
 			totalDone += b.Done
-			totalEst += b.EstHours
+			totalEst += b.EstAgentHours
 			totalAct += b.ActHours
 		}
 

@@ -192,10 +192,13 @@ func computeCycleTime(tasks []models.Task) CycleTimeMetric {
 }
 
 func computeAccuracy(tasks []models.Task) AccuracyMetric {
+	// Agent axis: actual_hours is the agent's active in_progress time, so the
+	// matching estimate is estimate_agent_minutes (agent), not estimate_hours
+	// (human) — comparing those two would mix axes and isn't meaningful.
 	var accs []float64
 	for _, t := range tasks {
-		if t.EstimateHours > 0 && t.ActualHours > 0 {
-			lo, hi := t.EstimateHours, t.ActualHours
+		if t.EstimateAgentMinutes > 0 && t.ActualHours > 0 {
+			lo, hi := float64(t.EstimateAgentMinutes)/60.0, t.ActualHours
 			if lo > hi {
 				lo, hi = hi, lo
 			}

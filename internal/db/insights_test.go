@@ -12,8 +12,8 @@ func TestComputeInsights(t *testing.T) {
 	d := OpenTestDB(t)
 	pid := mkTestProject(t, d, "INS") // default WIP limit 3
 
-	// t1: estimate 2h, actual 2h, done → 100% accuracy
-	t1, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t1", EstimateHours: 2})
+	// t1: agent-estimate 120m=2h, actual 2h, done → 100% accuracy (agent axis)
+	t1, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t1", EstimateHours: 2, EstimateAgentMinutes: 120})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +24,8 @@ func TestComputeInsights(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// t2: estimate 4h, actual 1h, done → 25% accuracy
-	t2, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t2", EstimateHours: 4})
+	// t2: agent-estimate 240m=4h, actual 1h, done → 25% accuracy (agent axis)
+	t2, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: "t2", EstimateHours: 4, EstimateAgentMinutes: 240})
 	if err != nil {
 		t.Fatal(err)
 	}

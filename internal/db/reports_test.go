@@ -6,18 +6,20 @@ func TestComputeVelocity(t *testing.T) {
 	d := OpenTestDB(t)
 	pid := mkTestProject(t, d, "VEL")
 
-	mk := func(title string, est float64) string {
-		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: "task", EstimateHours: est})
+	// Velocity accuracy is agent-axis: agent estimate (estimate_agent_minutes) vs
+	// actual_hours. Use agent-minutes that map to clean hours (120m=2h, 240m=4h).
+	mk := func(title string, agentMin int) string {
+		tk, err := CreateTask(d, CreateTaskOpts{ProjectID: pid, Title: title, Type: "task", EstimateAgentMinutes: agentMin})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return tk.ID
 	}
-	a, b := mk("A", 2), mk("B", 4)
-	if err := CompleteTask(d, a, 3, ""); err != nil { // est 2 / act 3
+	a, b := mk("A", 120), mk("B", 240)
+	if err := CompleteTask(d, a, 3, ""); err != nil { // agent-est 2h / act 3h
 		t.Fatal(err)
 	}
-	if err := CompleteTask(d, b, 4, ""); err != nil { // est 4 / act 4
+	if err := CompleteTask(d, b, 4, ""); err != nil { // agent-est 4h / act 4h
 		t.Fatal(err)
 	}
 
@@ -33,8 +35,8 @@ func TestComputeVelocity(t *testing.T) {
 	if w.Done != 2 {
 		t.Fatalf("done: got %d want 2", w.Done)
 	}
-	if w.EstHours != 6 {
-		t.Fatalf("est hours: got %v want 6", w.EstHours)
+	if w.EstAgentHours != 6 {
+		t.Fatalf("agent-est hours: got %v want 6", w.EstAgentHours)
 	}
 	if w.ActHours != 7 {
 		t.Fatalf("act hours: got %v want 7", w.ActHours)
