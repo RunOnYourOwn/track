@@ -10,6 +10,7 @@ let _prefix = '';
 let _allTasks = [];
 let _graph = { nodes: [], edges: [], max_layer: 0, has_cycle: false };
 let _showDone = false;
+let _collapsed = new Set(); // container node ids whose subtree is folded away
 
 async function renderGraph(prefix) {
   _prefix = prefix;
@@ -53,6 +54,13 @@ async function _loadGraph() {
 // Re-fetch (the connected set/layering depend on the done filter) then redraw.
 async function _reloadGraph() {
   await _loadGraph();
+  _drawGraph();
+}
+
+// Collapse/expand is pure view state over the already-loaded graph — no refetch.
+function _toggleCollapse(id) {
+  if (_collapsed.has(id)) _collapsed.delete(id);
+  else _collapsed.add(id);
   _drawGraph();
 }
 
@@ -101,10 +109,52 @@ function _drawGraph() {
     nodes.forEach(n => { dfsOrder.set(n.id, dfsOrder.size); walk(childrenOf[n.id] || []); });
   })(roots);
 
-  const maxLayer = _graph.max_layer;
+  // Collapse/expand: a collapsed epic/feature folds its whole subtree away. Edges
+  // that touched a hidden node are rolled up to the nearest visible ancestor (the
+  // collapsed container) and de-duplicated, so a cross-subtree dependency still
+  // shows as a single edge between the collapsed boxes. This is a view-state
+  // filter over the already-fetched graph; the server-side structure is untouched.
+  const parentById = new Map();
+  connectedTasks.forEach(t => {
+    if (t.parent_id && connectedIds.has(t.parent_id)) parentById.set(t.id, t.parent_id);
+  });
+  const isCollapsible = (id) => (childrenOf[id] || []).length > 0;
+  const descCount = new Map();
+  function countDesc(id) {
+    if (descCount.has(id)) return descCount.get(id);
+    let n = 0;
+    (childrenOf[id] || []).forEach(c => { n += 1 + countDesc(c.id); });
+    descCount.set(id, n);
+    return n;
+  }
+  connectedTasks.forEach(t => countDesc(t.id));
+
+  const hidden = new Set();
+  connectedTasks.forEach(t => {
+    let p = parentById.get(t.id);
+    while (p) { if (_collapsed.has(p) && isCollapsible(p)) { hidden.add(t.id); break; } p = parentById.get(p); }
+  });
+  const visibleTasks = connectedTasks.filter(t => !hidden.has(t.id));
+  const visibleIds = new Set(visibleTasks.map(t => t.id));
+
+  const nearestVisible = (id) => { let c = id; while (c && hidden.has(c)) c = parentById.get(c); return c; };
+  const seenEdge = new Set();
+  const drawEdges = [];
+  validEdges.forEach(e => {
+    const f = nearestVisible(e.from_task_id);
+    const tt = nearestVisible(e.to_task_id);
+    if (!f || !tt || f === tt || !visibleIds.has(f) || !visibleIds.has(tt)) return;
+    const key = `${e.kind}|${f}|${tt}`;
+    if (seenEdge.has(key)) return;
+    seenEdge.add(key);
+    drawEdges.push({ from_task_id: f, to_task_id: tt, kind: e.kind });
+  });
+
+  const layerVals = visibleTasks.map(t => layer.get(t.id) ?? 0);
+  const maxLayer = layerVals.length ? Math.max(...layerVals) : 0;
   const layerNodes = [];
   for (let l = 0; l <= maxLayer; l++) {
-    const nodesInLayer = connectedTasks
+    const nodesInLayer = visibleTasks
       .filter(t => layer.get(t.id) === l)
       .sort((a, b) => (dfsOrder.get(a.id) ?? 0) - (dfsOrder.get(b.id) ?? 0));
     layerNodes.push(nodesInLayer);
@@ -154,6 +204,7 @@ function _drawGraph() {
       ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
       ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;">⚠ dependency cycle detected</span>` : ''}
       <span style="margin-left:auto;display:inline-flex;gap:6px;">
+        ${_collapsed.size ? `<button class="btn-ghost btn-sm" id="graph-expand-all" title="Expand every collapsed node">Expand all</button>` : ''}
         <button class="btn-ghost btn-sm" id="graph-zoom-out" title="Zoom out">−</button>
         <button class="btn-ghost btn-sm" id="graph-zoom-in" title="Zoom in">+</button>
         <button class="btn-ghost btn-sm" id="graph-fit" title="Fit graph to screen">Fit</button>
@@ -164,6 +215,7 @@ function _drawGraph() {
 
   const showDoneEl = document.getElementById('graph-show-done');
   if (showDoneEl) showDoneEl.addEventListener('change', () => { _showDone = showDoneEl.checked; _reloadGraph(); });
+  document.getElementById('graph-expand-all')?.addEventListener('click', e => { e.stopPropagation(); _collapsed.clear(); _drawGraph(); });
 
   const container = document.getElementById('graph-container');
   const containerRect = container.getBoundingClientRect();
@@ -231,7 +283,7 @@ function _drawGraph() {
     .attr('d', 'M0,-4L8,0L0,4')
     .attr('fill', '#f85149');
 
-  validEdges.forEach(e => {
+  drawEdges.forEach(e => {
     const from = pos.get(e.from_task_id);
     const to = pos.get(e.to_task_id);
     if (!from || !to) return;
@@ -274,7 +326,7 @@ function _drawGraph() {
   // so they're never occluded (cards are opaque and paint over the base edges).
   const overlayG = zoomLayer.append('g');
 
-  connectedTasks.forEach(t => {
+  visibleTasks.forEach(t => {
     const p = pos.get(t.id);
     if (!p) return;
     const s = STATUS[t.status] || STATUS.todo;
@@ -284,6 +336,20 @@ function _drawGraph() {
       .attr('data-id', t.id);
 
     const isCritNode = criticalPath.has(t.id);
+    const collapsible = isCollapsible(t.id);
+    const collapsedNow = collapsible && _collapsed.has(t.id);
+
+    // Collapsed nodes get a stacked shadow behind them, hinting at folded content.
+    if (collapsedNow) {
+      g.append('rect')
+        .attr('x', 5).attr('y', 5)
+        .attr('width', NODE_W).attr('height', NODE_H)
+        .attr('rx', 6)
+        .attr('fill', s.bg)
+        .attr('stroke', isCritNode ? '#f85149' : s.border)
+        .attr('stroke-width', 1)
+        .style('opacity', 0.5);
+    }
 
     // Node background
     g.append('rect')
@@ -342,9 +408,33 @@ function _drawGraph() {
       }
     }
 
+    // Collapse/expand control for container nodes: "−" when expanded, "+N" (hidden
+    // descendant count) when collapsed. Sits left of the status dot; its own click
+    // toggles fold state without opening the detail panel.
+    if (collapsible) {
+      const label = collapsedNow ? `+${descCount.get(t.id)}` : '−';
+      const pillW = Math.max(18, 10 + label.length * 7);
+      const px = NODE_W - 24 - pillW;
+      const tg = g.append('g').style('cursor', 'pointer').attr('data-collapse', t.id);
+      tg.append('rect')
+        .attr('x', px).attr('y', 6)
+        .attr('width', pillW).attr('height', 16)
+        .attr('rx', 8)
+        .attr('fill', '#21262d')
+        .attr('stroke', '#484f58')
+        .attr('stroke-width', 1);
+      tg.append('text')
+        .attr('x', px + pillW / 2).attr('y', 17)
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#8b949e')
+        .attr('font-size', '10px')
+        .text(label);
+      tg.on('click', function(event) { event.stopPropagation(); _toggleCollapse(t.id); });
+    }
+
     // Hover highlight
     g.on('mouseenter', function() {
-      _highlightConnected(t.id, validEdges, connectedTasks, nodeG, edgeG, overlayG);
+      _highlightConnected(t.id, drawEdges, visibleTasks, nodeG, edgeG, overlayG);
     })
     .on('mouseleave', function() {
       _resetHighlight(nodeG, edgeG, overlayG);
@@ -485,7 +575,7 @@ function _highlightConnected(nodeId, edges, tasks, nodeG, edgeG, overlayG) {
   walkUp(nodeId);
   walkDown(nodeId);
 
-  nodeG.selectAll('g').style('opacity', function() {
+  nodeG.selectAll('g[data-id]').style('opacity', function() {
     return connected.has(this.getAttribute('data-id')) ? 1 : 0.2;
   });
   // Dim base edges; re-draw the connected ones bright + thicker in the overlay
@@ -508,7 +598,7 @@ function _highlightConnected(nodeId, edges, tasks, nodeG, edgeG, overlayG) {
 }
 
 function _resetHighlight(nodeG, edgeG, overlayG) {
-  nodeG.selectAll('g').style('opacity', 1);
+  nodeG.selectAll('g[data-id]').style('opacity', 1);
   edgeG.selectAll('path').style('opacity', 1);
   if (overlayG) overlayG.selectAll('*').remove();
 }
