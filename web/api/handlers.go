@@ -918,6 +918,10 @@ func (h *handler) resolveDecision(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "decision not found")
 			return
 		}
+		if strings.Contains(err.Error(), "already decided") {
+			writeError(w, http.StatusConflict, "decision is already decided")
+			return
+		}
 		writeServerError(w, err)
 		return
 	}
@@ -1149,6 +1153,10 @@ func (h *handler) updateSprint(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Status == "" {
 		writeError(w, http.StatusBadRequest, "status is required")
+		return
+	}
+	if !db.ValidSprintStatuses[req.Status] {
+		writeError(w, http.StatusBadRequest, "invalid status (expected: planned, active, completed)")
 		return
 	}
 	if _, err := db.GetSprint(h.conn, id); err != nil {

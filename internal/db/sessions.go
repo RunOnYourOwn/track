@@ -79,6 +79,9 @@ func ListSessions(db *sql.DB, projectID string, limit int) ([]models.Session, er
 }
 
 func LogTime(d *sql.DB, taskID, sessionID string, hours float64, note string) error {
+	if hours <= 0 {
+		return fmt.Errorf("hours must be positive, got %g", hours)
+	}
 	tx, err := d.Begin()
 	if err != nil {
 		return err

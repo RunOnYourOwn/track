@@ -98,10 +98,22 @@ func ListSprints(d *sql.DB, projectID string) ([]models.Sprint, error) {
 	return result, rows.Err()
 }
 
+// ValidSprintStatuses are the sprint lifecycle states.
+var ValidSprintStatuses = map[string]bool{"planned": true, "active": true, "completed": true}
+
 func UpdateSprintStatus(d *sql.DB, id, status string) error {
+	if !ValidSprintStatuses[status] {
+		return fmt.Errorf("invalid sprint status %q (expected: planned, active, completed)", status)
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := d.Exec(`UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?`, status, now, id)
-	return err
+	res, err := d.Exec(`UPDATE sprints SET status = ?, updated_at = ? WHERE id = ?`, status, now, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("sprint %q not found", id)
+	}
+	return nil
 }
 
 func AddTaskToSprint(d *sql.DB, sprintID, taskID string) error {
