@@ -29,6 +29,7 @@ func RegisterRoutes(mux *http.ServeMux, conn *sql.DB) {
 	mux.HandleFunc("POST /api/projects", cors(h.createProject))
 	mux.HandleFunc("GET /api/projects/{prefix}", cors(h.getProject))
 	mux.HandleFunc("PATCH /api/projects/{prefix}", cors(h.updateProject))
+	mux.HandleFunc("DELETE /api/projects/{prefix}", cors(h.deleteProject))
 	mux.HandleFunc("GET /api/projects/{prefix}/tasks", cors(h.listTasks))
 	mux.HandleFunc("POST /api/projects/{prefix}/tasks", cors(h.createTask))
 	mux.HandleFunc("GET /api/projects/{prefix}/sessions", cors(h.listSessions))
@@ -296,6 +297,27 @@ func (h *handler) createProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, p)
+}
+
+// deleteProject permanently removes a project and ALL its data (tasks, sprints,
+// sessions, decisions, learnings, blockers) via the cascading DeleteProject. The
+// caller (UI/agent) is responsible for confirming with the user first.
+func (h *handler) deleteProject(w http.ResponseWriter, r *http.Request) {
+	prefix := r.PathValue("prefix")
+	p, err := db.GetProjectByPrefix(h.conn, prefix)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			writeError(w, http.StatusNotFound, "project not found")
+			return
+		}
+		writeServerError(w, err)
+		return
+	}
+	if err := db.DeleteProject(h.conn, p.ID); err != nil {
+		writeServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- task handlers ---

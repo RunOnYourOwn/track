@@ -320,6 +320,7 @@ async function renderDashboard() {
       const healthScore = p.health_score ?? 0;
 
       return `
+        <div class="project-card-wrap">
         <a class="project-card" href="#/project/${encodeURIComponent(p.prefix)}/board">
           <div class="project-card-header">
             <span class="project-prefix">${escHtml(p.prefix)}</span>
@@ -337,7 +338,9 @@ async function renderDashboard() {
             ${(c.waiting || 0) > 0 ? `<span class="count-chip waiting"><span class="count-num">${c.waiting}</span> waiting</span>` : ''}
             ${(c.blocked || 0) > 0 ? `<span class="count-chip blocked"><span class="count-num">${c.blocked}</span> blocked</span>` : ''}
           </div>
-        </a>`;
+        </a>
+        <button class="project-card-delete" data-prefix="${escHtml(p.prefix)}" data-name="${escHtml(p.name)}" title="Delete project" aria-label="Delete project ${escHtml(p.prefix)}">&times;</button>
+        </div>`;
     }).join('');
   }
 
@@ -381,6 +384,60 @@ async function renderDashboard() {
   `);
 
   document.getElementById('btn-create-project')?.addEventListener('click', _openCreateProject);
+  document.querySelectorAll('.project-card-delete').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _openDeleteProject(btn.dataset.prefix, btn.dataset.name);
+    });
+  });
+}
+
+// Confirmation modal for the irreversible cascade delete. The Delete button stays
+// disabled until the user retypes the exact prefix.
+function _openDeleteProject(prefix, name) {
+  const overlay = document.createElement('div');
+  overlay.className = 'tt-modal-overlay';
+  overlay.id = 'delete-project-overlay';
+  overlay.innerHTML = `
+    <div class="tt-modal" role="dialog" aria-label="Delete project">
+      <div class="tt-modal-title">Delete project ${escHtml(prefix)}?</div>
+      <p class="text-muted" style="font-size:13px;line-height:1.5;margin:0 0 12px;">
+        This permanently deletes <strong>${escHtml(name)}</strong> and <strong>all</strong> of its data —
+        every task, sprint, session, decision, learning, and blocker. This cannot be undone.
+      </p>
+      <div class="tt-modal-field">
+        <label class="tt-modal-label">Type <strong>${escHtml(prefix)}</strong> to confirm</label>
+        <input class="tt-modal-input" id="dp-confirm" placeholder="${escHtml(prefix)}" autocomplete="off">
+      </div>
+      <div class="tt-modal-actions">
+        <div></div>
+        <div style="display:flex;gap:8px;">
+          <button class="tt-modal-btn" id="dp-cancel">Cancel</button>
+          <button class="tt-modal-btn danger" id="dp-delete" disabled>Delete</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const input = document.getElementById('dp-confirm');
+  const delBtn = document.getElementById('dp-delete');
+  input.addEventListener('input', () => { delBtn.disabled = input.value.trim() !== prefix; });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  document.getElementById('dp-cancel').addEventListener('click', () => overlay.remove());
+  delBtn.addEventListener('click', async () => {
+    if (input.value.trim() !== prefix) return;
+    delBtn.disabled = true;
+    try {
+      await api.del('/projects/' + encodeURIComponent(prefix));
+      overlay.remove();
+      renderDashboard();
+    } catch (err) {
+      alert('Failed to delete project: ' + (err.message || err));
+      delBtn.disabled = false;
+    }
+  });
+  input.focus();
 }
 
 function _openCreateProject() {
