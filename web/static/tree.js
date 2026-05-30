@@ -79,14 +79,32 @@ function _drawTable() {
         </thead>
         <tbody>
           ${rows.length === 0 ? '<tr><td colspan="10" class="tt-empty">No tasks found</td></tr>' : ''}
-          ${rows.map(r => _renderRow(r.task, r.depth)).join('')}
+          ${rows.map(r => _renderRow(r.task, r.depth, r.parentType)).join('')}
         </tbody>
       </table>
     </div>
     <div class="tt-bulk-bar ${_selected.size > 0 ? 'visible' : ''}" id="tt-bulk-bar">
       <span class="tt-bulk-count">${_selected.size} selected</span>
-      <select class="tt-bulk-btn" id="tt-bulk-status"><option value="">Set status…</option>${STATUSES.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+      <select class="tt-bulk-btn" id="tt-bulk-status"><option value="">Set status…</option>${STATUSES.map(s => `<option value="${s}">${s.replace(/_/g, ' ')}</option>`).join('')}</select>
       <select class="tt-bulk-btn" id="tt-bulk-priority"><option value="">Set priority…</option>${PRIORITIES.map(p => `<option value="${p}">${p}</option>`).join('')}</select>
+      <select class="tt-bulk-btn" id="tt-bulk-type"><option value="">Set type…</option><option value="epic">epic</option><option value="feature">feature</option><option value="task">task</option></select>
+      <select class="tt-bulk-btn" id="tt-bulk-estimate"><option value="">Set estimate…</option><option value="XS">XS</option><option value="S">S</option><option value="M">M</option><option value="L">L</option><option value="XL">XL</option><option value="__clear__">(clear)</option></select>
+      <select class="tt-bulk-btn" id="tt-bulk-parent">
+        <option value="">Set parent…</option>
+        <option value="__none__">(none)</option>
+        ${_tasks
+          .filter(t => (t.type === 'epic' || t.type === 'feature') && !_selected.has(t.id))
+          .sort((a, b) => {
+            if (a.type !== b.type) return a.type === 'epic' ? -1 : 1;
+            return (a.seq || 0) - (b.seq || 0);
+          })
+          .map(p => {
+            const label = `${_prefix}-${p.seq} · ${p.type} · ${escHtml(p.title.length > 30 ? p.title.slice(0, 28) + '…' : p.title)}`;
+            return `<option value="${p.id}">${label}</option>`;
+          })
+          .join('')}
+      </select>
+      <input type="date" class="tt-bulk-btn" id="tt-bulk-due" title="Set due date (clear to remove)">
       <button class="tt-bulk-btn danger" id="tt-bulk-delete">Delete</button>
       <button class="tt-bulk-btn" id="tt-bulk-clear">Clear</button>
     </div>
@@ -125,21 +143,26 @@ function _buildRows() {
   sortTree(roots);
 
   const flat = [];
-  const walk = (nodes, depth) => {
+  const walk = (nodes, depth, parentType) => {
     nodes.forEach(node => {
-      flat.push({ task: node, depth });
+      flat.push({ task: node, depth, parentType });
       if (node.children.length > 0 && !_collapsed[node.id]) {
-        walk(node.children, depth + 1);
+        walk(node.children, depth + 1, node.type || 'task');
       }
     });
   };
-  walk(roots, 0);
+  walk(roots, 0, null);
   return flat;
 }
 
-function _renderRow(task, depth) {
+function _renderRow(task, depth, parentType) {
   const t = task;
   const type = t.type || 'task';
+  // A "subtask" is a task whose parent is also a task — get a distinct icon
+  // so the tree visually distinguishes a leaf-task from a nested sub-item.
+  // Deeper nesting (sub-sub-task etc.) keeps reusing the subtask icon —
+  // visual depth is already carried by indentation + colored left border.
+  const isSubtask = type === 'task' && parentType === 'task';
   const checked = _selected.has(t.id) ? 'checked' : '';
   const isDone = t.status === 'done';
   const hasChildren = (t.children && t.children.length > 0);
@@ -151,8 +174,13 @@ function _renderRow(task, depth) {
   const displayId = `${_prefix}-${t.seq}`;
   const estDisplay = t.estimate_hours ? t.estimate_hours + 'h' : (t.estimate_size || '');
   const dueDisplay = t.due_date ? t.due_date.slice(5) : '';
-  const typeIconName = type === 'epic' ? 'target' : type === 'feature' ? 'package' : 'point';
-  const typeChip = `<span title="${type}">${icon(typeIconName, {size: 16, cls: 'icon-' + type})}</span>`;
+  const typeIconName = type === 'epic' ? 'target'
+                     : type === 'feature' ? 'package'
+                     : isSubtask ? 'corner-down-right'
+                     : 'point';
+  const chipLabel = isSubtask ? 'subtask' : type;
+  const chipClass = isSubtask ? 'icon-task' : 'icon-' + type;
+  const typeChip = `<span title="${chipLabel}">${icon(typeIconName, {size: 16, cls: chipClass})}</span>`;
 
   return `
     <tr class="tt-row ${type} ${isDone ? 'done' : ''}" data-id="${t.id}" data-type="${type}" draggable="false">
@@ -162,7 +190,7 @@ function _renderRow(task, depth) {
       <td class="tt-col-title">
         <div class="tt-cell-title" style="padding-left:${indent}px;">
           <span class="tt-toggle" data-toggle-id="${t.id}">${toggleIcon}</span>
-          <span class="tt-title-text" data-edit="title" data-id="${t.id}">${escHtml(t.title)}</span>
+          <span class="tt-title-text" data-id="${t.id}">${escHtml(t.title)}</span>
         </div>
       </td>
       <td class="tt-col-type" data-edit="type" data-id="${t.id}">${typeChip}</td>
@@ -216,11 +244,18 @@ function _attachListeners() {
     });
   });
 
-  // Inline editing — click cells
+  // Inline editing — click cells (desktop only). On mobile a cell tap is
+  // hard to hit precisely; route through the detail modal instead.
+  const isTouch = window.matchMedia('(max-width: 720px)').matches;
   document.querySelectorAll('[data-edit]').forEach(el => {
     el.addEventListener('click', (e) => {
       if (e.target.closest('.tt-toggle')) return;
       const id = el.dataset.id;
+      if (isTouch) {
+        e.stopPropagation();
+        _openDetail(id);
+        return;
+      }
       const field = el.dataset.edit;
       // Epic/feature dates are derived from descendants — not editable here.
       if (field === 'due_date' || field === 'start_date') {
@@ -228,6 +263,28 @@ function _attachListeners() {
         if (task && (task.type === 'epic' || task.type === 'feature')) return;
       }
       _startEdit(id, field, el);
+    });
+  });
+
+  // Whole-card click: toggle expand/collapse on rows with children, open
+  // the detail modal on leaves. The title text always opens detail (since
+  // it isn't inline-editable anymore). Controls (checkbox, action menu,
+  // drag handle, toggle, inline-edit cells) keep their own handlers.
+  document.querySelectorAll('.tt-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('input, .tt-action-btn, .tt-actions-menu, .tt-drag-handle, .tt-toggle, [data-edit]')) return;
+      const id = row.dataset.id;
+      if (e.target.closest('.tt-title-text')) {
+        _openDetail(id);
+        return;
+      }
+      const hasChildren = _tasks.some(t => t.parent_id === id);
+      if (hasChildren) {
+        _collapsed[id] = !_collapsed[id];
+        _drawTable();
+      } else {
+        _openDetail(id);
+      }
     });
   });
 
@@ -250,10 +307,26 @@ function _attachListeners() {
   // Bulk actions
   const bulkStatus = document.getElementById('tt-bulk-status');
   const bulkPriority = document.getElementById('tt-bulk-priority');
+  const bulkType = document.getElementById('tt-bulk-type');
+  const bulkEstimate = document.getElementById('tt-bulk-estimate');
+  const bulkParent = document.getElementById('tt-bulk-parent');
+  const bulkDue = document.getElementById('tt-bulk-due');
   const bulkDelete = document.getElementById('tt-bulk-delete');
   const bulkClear = document.getElementById('tt-bulk-clear');
   if (bulkStatus) bulkStatus.addEventListener('change', () => { if (bulkStatus.value) _bulkAction('status', bulkStatus.value); });
   if (bulkPriority) bulkPriority.addEventListener('change', () => { if (bulkPriority.value) _bulkAction('priority', bulkPriority.value); });
+  if (bulkType) bulkType.addEventListener('change', () => { if (bulkType.value) _bulkAction('type', bulkType.value); });
+  if (bulkEstimate) bulkEstimate.addEventListener('change', () => {
+    if (!bulkEstimate.value) return;
+    _bulkAction('estimate_size', bulkEstimate.value === '__clear__' ? '' : bulkEstimate.value);
+  });
+  if (bulkParent) bulkParent.addEventListener('change', () => {
+    if (!bulkParent.value) return;
+    _bulkAction('parent_id', bulkParent.value === '__none__' ? '' : bulkParent.value);
+  });
+  if (bulkDue) bulkDue.addEventListener('change', () => {
+    _bulkAction('due_date', bulkDue.value);
+  });
   if (bulkDelete) bulkDelete.addEventListener('click', _bulkDelete);
   if (bulkClear) bulkClear.addEventListener('click', () => { _selected.clear(); _drawTable(); });
 
