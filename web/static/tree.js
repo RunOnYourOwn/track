@@ -144,16 +144,20 @@ function _renderRow(task, depth) {
   const isDone = t.status === 'done';
   const hasChildren = (t.children && t.children.length > 0);
   const isCollapsed = _collapsed[t.id];
-  const toggleIcon = hasChildren ? (isCollapsed ? '▸' : '▾') : '<span style="width:16px;display:inline-block"></span>';
+  const toggleIcon = hasChildren
+    ? icon(isCollapsed ? 'chevron-right' : 'chevron-down', {size: 14, cls: 'icon-muted'})
+    : '<span style="width:14px;display:inline-block"></span>';
   const indent = depth * 20;
   const displayId = `${_prefix}-${t.seq}`;
   const estDisplay = t.estimate_hours ? t.estimate_hours + 'h' : (t.estimate_size || '');
   const dueDisplay = t.due_date ? t.due_date.slice(5) : '';
+  const typeIconName = type === 'epic' ? 'target' : type === 'feature' ? 'package' : 'point';
+  const typeChip = `<span title="${type}">${icon(typeIconName, {size: 16, cls: 'icon-' + type})}</span>`;
 
   return `
     <tr class="tt-row ${type} ${isDone ? 'done' : ''}" data-id="${t.id}" data-type="${type}" draggable="false">
       <td class="tt-col-check"><input type="checkbox" class="tt-checkbox tt-row-check" data-id="${t.id}" ${checked}></td>
-      <td class="tt-col-drag"><span class="tt-drag-handle" draggable="true" data-id="${t.id}">⠿</span></td>
+      <td class="tt-col-drag"><span class="tt-drag-handle" draggable="true" data-id="${t.id}" title="Drag to reorder">${icon('grip-vertical', {size: 14, cls: 'icon-muted'})}</span></td>
       <td class="tt-col-id" style="font-family:var(--font-mono);font-size:11px;color:var(--muted);">${displayId}</td>
       <td class="tt-col-title">
         <div class="tt-cell-title" style="padding-left:${indent}px;">
@@ -161,14 +165,14 @@ function _renderRow(task, depth) {
           <span class="tt-title-text" data-edit="title" data-id="${t.id}">${escHtml(t.title)}</span>
         </div>
       </td>
-      <td class="tt-col-type" data-edit="type" data-id="${t.id}">${type}</td>
+      <td class="tt-col-type" data-edit="type" data-id="${t.id}">${typeChip}</td>
       <td class="tt-col-priority" data-edit="priority" data-id="${t.id}">${priorityBadge(t.priority)}</td>
       <td class="tt-col-status" data-edit="status" data-id="${t.id}">${statusBadge(t.status)}</td>
       <td class="tt-col-est" data-edit="estimate_hours" data-id="${t.id}">${estDisplay}</td>
       <td class="tt-col-due" data-edit="due_date" data-id="${t.id}">${dueDisplay}</td>
       <td class="tt-col-actions" style="position:relative;">
         <div class="tt-row-actions">
-          <button class="tt-action-btn" data-menu-id="${t.id}" title="Actions">⋯</button>
+          <button class="tt-action-btn" data-menu-id="${t.id}" title="Actions">${icon('dots', {size: 16, cls: 'icon-muted'})}</button>
         </div>
         ${_menuOpen === t.id ? _renderMenu(t) : ''}
       </td>

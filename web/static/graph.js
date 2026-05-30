@@ -255,7 +255,7 @@ function _drawGraph() {
       ${doneCount > 0 ? `<label class="filter-checkbox"><input type="checkbox" id="graph-show-done" ${_showDone ? 'checked' : ''}><span class="text-muted">Show done (${doneCount})</span></label>` : ''}
       ${containers.length ? `<label class="filter-checkbox" style="margin-left:12px;"><span class="text-muted">Focus</span><select id="graph-focus" class="filter-select" style="margin-left:6px;"><option value="">All</option>${focusOptions}</select></label>` : ''}
       <label class="filter-checkbox" style="margin-left:12px;"><input type="checkbox" id="graph-crit-only" ${_critOnly ? 'checked' : ''}><span class="text-muted">Critical path only</span></label>
-      ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;">⚠ dependency cycle detected</span>` : ''}
+      ${_graph.has_cycle ? `<span class="text-warning" title="A dependency cycle was detected; cyclic edges are ignored for layering" style="margin-left:12px;font-size:12px;display:inline-flex;align-items:center;gap:4px;">${icon('alert-triangle', {size: 14, cls: 'icon-warn'})} dependency cycle detected</span>` : ''}
       <span style="margin-left:auto;display:inline-flex;gap:6px;">
         ${_collapsed.size ? `<button class="btn-ghost btn-sm" id="graph-expand-all" title="Expand every collapsed node">Expand all</button>` : ''}
         <button class="btn-ghost btn-sm" id="graph-zoom-out" title="Zoom out">−</button>

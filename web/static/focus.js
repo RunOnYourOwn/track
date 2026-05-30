@@ -89,7 +89,7 @@ function _draw() {
     html += `<div class="focus-section-label focus-label-danger">Blockers (${_blockers.length})</div>`;
     _blockers.slice(0, 3).forEach(b => {
       html += `<div class="focus-blocker">
-        <span class="focus-blocker-type">${escHtml(b.blocker_type || '●')}</span>
+        <span class="focus-blocker-type">${b.blocker_type ? escHtml(b.blocker_type) : icon('point', {size: 12, cls: 'icon-danger'})}</span>
         <span class="focus-blocker-title">${escHtml(b.title)}</span>
       </div>`;
     });
@@ -102,7 +102,7 @@ function _draw() {
     html += '<div class="focus-section-label">Done recently</div>';
     recentDone.forEach(t => {
       html += `<div class="focus-done-item" data-task-id="${t.id}" role="button" tabindex="0">
-        <span class="focus-done-check">✓</span>
+        <span class="focus-done-check">${icon('check', {size: 12, cls: 'icon-success'})}</span>
         <span class="focus-done-id">${_prefix}-${t.seq}</span>
         <span class="focus-done-title">${escHtml(_trunc(t.title, 30))}</span>
       </div>`;
@@ -139,7 +139,7 @@ function _renderActiveCard(task) {
       <span class="focus-timer-label">since last update</span>
     </div>
     <div class="focus-active-actions">
-      <button class="focus-btn focus-btn-done" data-action="done" data-task-id="${task.id}">✓ Done</button>
+      <button class="focus-btn focus-btn-done" data-action="done" data-task-id="${task.id}">${icon('check', {size: 14})} Done</button>
     </div>
   </div>`;
 }
@@ -151,7 +151,7 @@ function _renderQueueCard(task) {
       <span class="focus-queue-id">${displayId}</span>
       <span class="focus-queue-title">${escHtml(_trunc(task.title, 36))}</span>
     </div>
-    <button class="focus-btn focus-btn-start" data-action="start" data-task-id="${task.id}">▶</button>
+    <button class="focus-btn focus-btn-start" data-action="start" data-task-id="${task.id}" title="Start">${icon('player-play-filled', {size: 14})}</button>
   </div>`;
 }
 

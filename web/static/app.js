@@ -257,20 +257,20 @@ function updateNav(hash) {
     const view = projMatch[2];
     const ep = encodeURIComponent(prefix);
     navLinks.innerHTML = `
-      <a href="#/" class="nav-links-back" data-icon="←" title="Dashboard"><span class="nav-label">←</span></a>
+      <a href="#/" class="nav-links-back" title="Dashboard">${icon('arrow-left', {size: 16})}<span class="nav-label">Back</span></a>
       <span class="nav-prefix">${escHtml(prefix)}</span>
-      <a href="#/project/${ep}/focus"    class="nav-view ${view === 'focus'    ? 'active' : ''}" data-icon="◉" title="Focus"><span class="nav-label">Focus</span></a>
-      <a href="#/project/${ep}/board"    class="nav-view ${view === 'board'    ? 'active' : ''}" data-icon="▦" title="Board"><span class="nav-label">Board</span></a>
-      <a href="#/project/${ep}/timeline" class="nav-view ${view === 'timeline' ? 'active' : ''}" data-icon="▬" title="Timeline"><span class="nav-label">Timeline</span></a>
-      <a href="#/project/${ep}/tree"     class="nav-view ${view === 'tree'     ? 'active' : ''}" data-icon="⊞" title="Tree"><span class="nav-label">Tree</span></a>
-      <a href="#/project/${ep}/graph"    class="nav-view ${view === 'graph'    ? 'active' : ''}" data-icon="◈" title="Graph"><span class="nav-label">Graph</span></a>
+      <a href="#/project/${ep}/focus"    class="nav-view ${view === 'focus'    ? 'active' : ''}" title="Focus">${icon('eye', {size: 16})}<span class="nav-label">Focus</span></a>
+      <a href="#/project/${ep}/board"    class="nav-view ${view === 'board'    ? 'active' : ''}" title="Board">${icon('layout-kanban', {size: 16})}<span class="nav-label">Board</span></a>
+      <a href="#/project/${ep}/timeline" class="nav-view ${view === 'timeline' ? 'active' : ''}" title="Timeline">${icon('timeline', {size: 16})}<span class="nav-label">Timeline</span></a>
+      <a href="#/project/${ep}/tree"     class="nav-view ${view === 'tree'     ? 'active' : ''}" title="Tree">${icon('binary-tree', {size: 16})}<span class="nav-label">Tree</span></a>
+      <a href="#/project/${ep}/graph"    class="nav-view ${view === 'graph'    ? 'active' : ''}" title="Graph">${icon('affiliate', {size: 16})}<span class="nav-label">Graph</span></a>
     `;
   } else {
     navLinks.innerHTML = `
-      <a href="#/"          class="nav-view ${hash === '#/' || hash === '' ? 'active' : ''}" data-icon="⌂" title="Dashboard"><span class="nav-label">Dashboard</span></a>
-      <a href="#/sessions"  class="nav-view ${hash === '#/sessions'  ? 'active' : ''}" data-icon="◷" title="Sessions"><span class="nav-label">Sessions</span></a>
-      <a href="#/knowledge" class="nav-view ${hash === '#/knowledge' ? 'active' : ''}" data-icon="◆" title="Knowledge"><span class="nav-label">Knowledge</span></a>
-      <a href="#/insights"  class="nav-view ${hash === '#/insights'  ? 'active' : ''}" data-icon="▤" title="Insights"><span class="nav-label">Insights</span></a>
+      <a href="#/"          class="nav-view ${hash === '#/' || hash === '' ? 'active' : ''}" title="Dashboard">${icon('home', {size: 16})}<span class="nav-label">Dashboard</span></a>
+      <a href="#/sessions"  class="nav-view ${hash === '#/sessions'  ? 'active' : ''}" title="Sessions">${icon('history', {size: 16})}<span class="nav-label">Sessions</span></a>
+      <a href="#/knowledge" class="nav-view ${hash === '#/knowledge' ? 'active' : ''}" title="Knowledge">${icon('book', {size: 16})}<span class="nav-label">Knowledge</span></a>
+      <a href="#/insights"  class="nav-view ${hash === '#/insights'  ? 'active' : ''}" title="Insights">${icon('chart-bar', {size: 16})}<span class="nav-label">Insights</span></a>
     `;
   }
 }
@@ -326,7 +326,7 @@ async function renderDashboard() {
     const more = expiringDecisions.length > 3 ? ` +${expiringDecisions.length - 3} more` : '';
     alertsHtml += `
       <div class="alert alert-warning">
-        <span>⚠</span>
+        ${icon('alert-triangle', {size: 16, cls: 'icon-warn'})}
         <span>Decisions need review: ${list}${more}</span>
       </div>`;
   }
@@ -336,7 +336,7 @@ async function renderDashboard() {
   if (projects.length === 0) {
     cardsHtml = `
       <div class="empty-state" style="grid-column:1/-1">
-        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-icon">${icon('inbox', {size: 40, cls: 'icon-muted'})}</div>
         <div class="empty-state-title">No projects yet</div>
         <div class="empty-state-body">Create your first project with <code>track project add</code></div>
       </div>`;
