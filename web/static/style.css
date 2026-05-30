@@ -86,6 +86,9 @@ code, .mono {
   font-weight: 500;
   transition: color 120ms, background 120ms;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .nav-links a:hover { color: var(--text); background: var(--surface2); text-decoration: none; }
 .nav-links a.active { color: var(--text); background: var(--surface2); }
@@ -105,6 +108,29 @@ code, .mono {
   margin: 0 2px;
   user-select: none;
 }
+
+/* =========================================================
+   Icons (Tabler, via icon() in icons.js) — inherits currentColor
+   so the surrounding text/element controls the color.
+   ========================================================= */
+
+.icon {
+  display: inline-block;
+  vertical-align: -3px;
+  flex-shrink: 0;
+}
+
+/* Type-chip tints — used on the tree view + kanban cards next to a task title.
+   Match the colored left-border palette already in tree.css (epic/feature/task). */
+.icon-epic    { color: #3fb950; }
+.icon-feature { color: #d29922; }
+.icon-task    { color: #58a6ff; }
+
+/* Status-tinted icon variants */
+.icon-warn    { color: #d29922; }
+.icon-danger  { color: #f85149; }
+.icon-success { color: #3fb950; }
+.icon-muted   { color: var(--muted); }
 
 /* =========================================================
    App container
@@ -1775,18 +1801,13 @@ code, .mono {
 
 /* =========================================================
    Responsive — Icon nav mode (<480px)
-   Nav links collapse to single-character icons
+   Nav links collapse to icon-only (the inline Tabler SVG stays visible)
    ========================================================= */
 
 @media (max-width: 480px) {
-  .nav-links a.nav-view .nav-label { display: none; }
-  .nav-links a.nav-view::before {
-    content: attr(data-icon);
-    font-size: 14px;
-  }
-  .nav-links a.nav-view { padding: 3px 7px; }
+  .nav-links a.nav-view .nav-label,
   .nav-links .nav-links-back .nav-label { display: none; }
-  .nav-links .nav-links-back::before { content: attr(data-icon); font-size: 14px; }
+  .nav-links a.nav-view { padding: 3px 7px; }
 }
 
 /* =========================================================
@@ -2062,7 +2083,7 @@ code, .mono {
 .tt-col-drag { width: 28px; }
 .tt-col-id { width: 88px; }
 .tt-col-title { width: auto; }
-.tt-col-type { width: 80px; }
+.tt-col-type { width: 32px; text-align: center; }
 .tt-col-priority { width: 96px; }
 .tt-col-status { width: 120px; }
 .tt-col-est { width: 64px; }
@@ -2192,11 +2213,14 @@ code, .mono {
   border-top: 1px solid var(--border);
   padding: 10px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
   z-index: 50;
   transform: translateY(100%);
   transition: transform 0.2s ease;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 .tt-bulk-bar.visible { transform: translateY(0); }
 .tt-bulk-count {
@@ -2322,4 +2346,91 @@ code, .mono {
   text-align: center;
   padding: 40px 20px;
   color: var(--muted);
+}
+
+/* =========================================================
+   Tree view — mobile card layout
+   On narrow screens the 10-column table is unreadable (title clips off the
+   right). Convert each row to a stacked card: meta line on top (id + badges
+   + actions), title on its own line below. Drag handle and due date are
+   hidden — neither is useful on touch.
+   ========================================================= */
+@media (max-width: 720px) {
+  .tt-container { overflow-x: visible; padding: 0 2px; }
+  .tt-table { display: block; width: 100%; border-collapse: separate; border-spacing: 0; }
+  .tt-table thead { display: none; }
+  .tt-table tbody { display: block; }
+
+  .tt-table td,
+  .tt-row td,
+  .tt-cell-title,
+  .tt-title-text {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+  .tt-title-text { word-break: break-word; }
+
+  .tt-row {
+    display: block;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    padding: 4px 8px 6px;
+    margin-bottom: 4px;
+  }
+  .tt-row td {
+    display: inline-block;
+    padding: 0 4px 0 0;
+    border: none;
+    vertical-align: middle;
+    font-size: 12px;
+    line-height: 1.4;
+    width: auto !important;
+  }
+  .tt-row td.tt-col-drag { display: none; }
+  .tt-row td.tt-col-due  { display: none; }
+  .tt-row td.tt-col-title {
+    display: block;
+    font-size: 14px;
+    line-height: 1.3;
+    padding: 2px 0 0;
+    width: 100% !important;
+  }
+  .tt-row td.tt-col-title .tt-cell-title {
+    padding-left: 0 !important;
+    align-items: flex-start;
+  }
+  .tt-toggle {
+    display: inline-block;
+    padding: 6px 8px;
+    margin: -6px 2px -6px -4px;
+    font-size: 13px;
+    color: var(--muted);
+    vertical-align: middle;
+  }
+  .tt-toggle:active { color: var(--text); }
+
+  .tt-row td.tt-col-actions { float: right; }
+  .tt-row td.tt-col-actions .tt-action-btn { font-size: 16px; padding: 0 8px; }
+
+  /* Hierarchy by color, not indent. */
+  .tt-row.task    { border-left: 2px solid var(--accent); }
+  .tt-row.feature { border-left: 2px solid var(--warning); }
+  .tt-row.epic    { border-left: 3px solid var(--success); }
+
+  .tt-row td.tt-col-check {
+    padding: 4px 6px 4px 2px;
+    vertical-align: middle;
+  }
+  .tt-row td.tt-col-check input[type=checkbox],
+  .tt-table thead input[type=checkbox] {
+    width: 22px;
+    height: 22px;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  .tt-row { cursor: pointer; }
+  .tt-row:active { background: var(--surface2); }
 }

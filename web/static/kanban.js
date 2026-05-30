@@ -200,7 +200,7 @@ function _renderColumn(col, tasks) {
     return `
       <div class="kanban-column kanban-column-collapsed" data-column="${col.id}" id="col-${col.id}">
         <div class="kanban-column-header kanban-column-header-collapsed">
-          <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Expand ${col.label}">◂</button>
+          <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Expand ${col.label}">${icon('chevron-left', {size: 14})}</button>
           <span class="kanban-column-title-rotated">${col.label}</span>
           <span class="kanban-count">${totalCards}</span>
         </div>
@@ -213,8 +213,8 @@ function _renderColumn(col, tasks) {
       <div class="kanban-column-header">
         <span class="kanban-column-title">${col.label}</span>
         <span class="kanban-count">${totalCards}${isInProgress ? `/<span class="wip-limit-display" id="wip-limit-display" title="Click to set WIP limit — controls max items in progress">${wipLimit}</span>` : ''}</span>
-        ${wip ? '<span class="wip-label" title="WIP limit reached">⚠</span>' : ''}
-        <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Collapse ${col.label}">▸</button>
+        ${wip ? `<span class="wip-label" title="WIP limit reached">${icon('alert-triangle', {size: 14, cls: 'icon-warn'})}</span>` : ''}
+        <button class="col-toggle-btn" data-col-toggle="${col.id}" title="Collapse ${col.label}">${icon('chevron-right', {size: 14})}</button>
       </div>
       <div class="kanban-cards" data-column="${col.id}">
         ${cards || '<div style="padding:8px;color:var(--muted);font-size:11px">No items</div>'}
@@ -228,11 +228,14 @@ function _renderTaskCard(task) {
   const title = task.title && task.title.length > 60 ? task.title.slice(0, 59) + '…' : (task.title || '');
   const stale = _staleDays(task.updated_at);
   const staleHtml = stale > STALE_DAYS
-    ? `<span class="stale-indicator" title="Last updated ${stale} days ago">⏱ ${stale}d</span>`
+    ? `<span class="stale-indicator" title="Last updated ${stale} days ago">${icon('clock', {size: 11, cls: 'icon-muted'})} ${stale}d</span>`
     : '';
   const blockedHtml = task.blocked
-    ? `<span class="blocked-indicator" title="Blocked by dependency">●</span>`
+    ? `<span class="blocked-indicator" title="Blocked by dependency">${icon('point', {size: 12, cls: 'icon-danger'})}</span>`
     : '';
+  const type = task.type || 'task';
+  const typeIconName = type === 'epic' ? 'target' : type === 'feature' ? 'package' : 'point';
+  const typeIconHtml = `<span class="task-card-type-icon" title="${type}">${icon(typeIconName, {size: 12, cls: 'icon-' + type})}</span>`;
   const parent = _parentLabel(task);
   const epicHtml = parent
     ? `<div class="task-card-epic" title="${escHtml(parent.full)}">${escHtml(parent.label)}</div>`
@@ -249,7 +252,7 @@ function _renderTaskCard(task) {
          aria-label="${displayId}: ${escHtml(task.title)}">
       <div class="task-card-row">
         <div class="task-card-left">
-          <div class="task-card-id">${displayId} ${blockedHtml}${staleHtml}</div>
+          <div class="task-card-id">${typeIconHtml} ${displayId} ${blockedHtml}${staleHtml}</div>
           <div class="task-card-title">${escHtml(title)}</div>
           ${epicHtml}
         </div>

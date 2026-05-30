@@ -180,7 +180,7 @@ function decisionCard(d, expiringSoon) {
   const sc = statusColors[d.status] || statusColors.superseded;
 
   const expiryWarning = expiringSoon
-    ? `<span title="Revisit soon" style="color:#d29922;font-size:12px;margin-left:6px">⚠ revisit due ${escHtml(d.revisit_by)}</span>`
+    ? `<span title="Revisit soon" style="color:#d29922;font-size:12px;margin-left:6px;display:inline-flex;align-items:center;gap:4px;">${icon('alert-triangle', {size: 12, cls: 'icon-warn'})} revisit due ${escHtml(d.revisit_by)}</span>`
     : '';
 
   const decidedSection = d.decided_at ? `

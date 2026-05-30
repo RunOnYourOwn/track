@@ -176,13 +176,13 @@ function sessionCard(s) {
   if (stats && (stats.tasks_completed || stats.tasks_touched || stats.total_hours || stats.commit_count)) {
     const chips = [];
     if (stats.tasks_completed > 0)
-      chips.push(`<span class="session-stat-chip completed">✓ ${stats.tasks_completed} done</span>`);
+      chips.push(`<span class="session-stat-chip completed">${icon('check', {size: 12})} ${stats.tasks_completed} done</span>`);
     if (stats.tasks_touched > 0)
-      chips.push(`<span class="session-stat-chip has-value">◎ ${stats.tasks_touched} touched</span>`);
+      chips.push(`<span class="session-stat-chip has-value">${icon('circle-dot', {size: 12})} ${stats.tasks_touched} touched</span>`);
     if (stats.total_hours > 0)
-      chips.push(`<span class="session-stat-chip hours">⏱ ${stats.total_hours.toFixed(1)}h</span>`);
+      chips.push(`<span class="session-stat-chip hours">${icon('clock', {size: 12})} ${stats.total_hours.toFixed(1)}h</span>`);
     if (stats.commit_count > 0)
-      chips.push(`<span class="session-stat-chip has-value">↟ ${stats.commit_count} commit${stats.commit_count > 1 ? 's' : ''}</span>`);
+      chips.push(`<span class="session-stat-chip has-value">${icon('git-commit', {size: 12})} ${stats.commit_count} commit${stats.commit_count > 1 ? 's' : ''}</span>`);
     statsRow = `<div class="session-stats-row">${chips.join('')}</div>`;
   }
 
@@ -192,13 +192,13 @@ function sessionCard(s) {
     <div class="session-card" data-session-id="${s.id}">
       <div class="session-card-meta">
         <span class="badge-prefix">${escHtml(s._prefix)}</span>
-        ${s.branch ? `<span class="badge-branch">⎇ ${escHtml(s.branch)}</span>` : ''}
+        ${s.branch ? `<span class="badge-branch">${icon('git-branch', {size: 12})} ${escHtml(s.branch)}</span>` : ''}
         <span style="color:#8b949e;font-size:12px">${startTime}</span>
         ${duration ? `<span class="session-duration">${duration}</span>` : '<span style="color:#d29922;font-size:12px">in progress</span>'}
       </div>
       ${s.summary ? `<div class="session-summary">${escHtml(s.summary)}</div>` : ''}
       ${statsRow}
-      ${hasDetail ? `<button class="session-expand-btn" data-sid="${s.id}" data-prefix="${escHtml(s._prefix)}">▾ Details</button>` : ''}
+      ${hasDetail ? `<button class="session-expand-btn" data-sid="${s.id}" data-prefix="${escHtml(s._prefix)}">${icon('chevron-down', {size: 12})} Details</button>` : ''}
       <div class="session-detail-slot" id="detail-${s.id}"></div>
     </div>`;
 }
@@ -211,12 +211,12 @@ async function toggleSessionDetail(btn) {
   if (_expandedSessions[sid]) {
     delete _expandedSessions[sid];
     slot.innerHTML = '';
-    btn.textContent = '▾ Details';
+    btn.innerHTML = `${icon('chevron-down', {size: 12})} Details`;
     return;
   }
 
   _expandedSessions[sid] = true;
-  btn.textContent = '▴ Hide';
+  btn.innerHTML = `${icon('chevron-up', {size: 12})} Hide`;
 
   if (_sessionStatsCache[sid]) {
     mountDetailPanel(slot, _sessionStatsCache[sid], prefix);
@@ -269,15 +269,15 @@ function renderDetailPanel(stats) {
     html += '<div class="session-detail-section">';
     html += '<div class="session-detail-title">Tasks</div>';
     stats.tasks.forEach(t => {
-      const icon = t.completed
-        ? '<span class="session-task-icon done">✓</span>'
-        : '<span class="session-task-icon touched">◎</span>';
+      const taskIcon = t.completed
+        ? `<span class="session-task-icon done">${icon('check', {size: 12})}</span>`
+        : `<span class="session-task-icon touched">${icon('circle-dot', {size: 12})}</span>`;
       const cycleTime = t.cycle_time_seconds
         ? `<span class="session-cycle-time">${formatCycleTime(t.cycle_time_seconds)}</span>`
         : '';
       const estimates = formatEstimates(t);
       html += `<div class="session-task-item" data-task-id="${t.task_id}" role="button" tabindex="0" title="View task detail">
-        ${icon}
+        ${taskIcon}
         <span class="session-task-id">#${t.seq}</span>
         <span>${escHtml(t.title)}</span>
         ${estimates}
